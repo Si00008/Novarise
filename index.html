@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>冉星 Novarise</title>
+<meta name="description" content="冉星 Novarise - 每天打开一次的生活仪表盘">
+<link rel = "stylesheet" href = "style.css">
+</head>
+<body>
+<div class="container">
+  <header class="header">
+    <div class="header-left">
+      <div class="avatar" id="avatar" title="点击修改头像"></div>
+      <div class="greeting">
+        <h1 id="greetingText">你好</h1>
+        <div class="date" id="dateText"></div>
+      </div>
+    </div>
+    <div class="header-right">
+      <button class="icon-btn" id="themeToggle" title="切换深浅色">🌙</button>
+      <button class="icon-btn" id="settingsBtn" title="设置">⚙️</button>
+    </div>
+  </header>
+
+  <main class="grid">
+    <!-- 待办 -->
+    <section class="card" id="card-todo">
+      <div class="card-title">
+        <span class="card-title-left"><span class="icon">📋</span>待办事项</span>
+        <span class="card-title-right">
+          <div class="view-tabs" id="todoViewTabs">
+            <button class="view-tab active" data-view="date">按日期</button>
+            <button class="view-tab" data-view="type">按类型</button>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="clearDoneBtn">清空已完成</button>
+        </span>
+      </div>
+      <div class="todo-search-row">
+        <input type="text" id="todoSearch" placeholder="🔍 搜索待办..." maxlength="30">
+      </div>
+      <div class="todo-input-row">
+        <input type="text" id="todoInput" placeholder="添加新待办..." maxlength="50" enterkeyhint="done">
+        <!-- 自定义的模糊日期输入框 -->
+        <div class="fuzzy-date-box">
+          <input type="text" id="filterYear" maxlength="4" placeholder="____"> 年
+          <input type="text" id="filterMonth" maxlength="2" placeholder="__"> 月
+          <input type="text" id="filterDay" maxlength="2" placeholder="__"> 日
+          <!-- 保留原生日历功能，通过点击图标唤起 -->
+          <span id="openCalendarBtn" style="cursor:pointer; font-size:18px;" title="点击选择日历">📅</span>
+          <input type="date" id="hiddenDatePicker" style="position:absolute; opacity:0; width:0; height:0;">
+        </div>
+        <button class="btn btn-ghost btn-sm" id="clearTodoDateBtn" title="清空日期，显示所有">✕</button>
+        <select class="todo-type-select" id="todoTypeSelect">
+          <option value="工作">工作</option>
+          <option value="生活">生活</option>
+          <option value="学习">学习</option>
+          <option value="其他">其他</option>
+        </select>
+        <button class="btn" id="addTodoBtn">添加</button>
+      </div>
+      <div id="todoContainer"></div>
+      <div class="todo-progress-bar"><div class="todo-progress-fill" id="todoProgress"></div></div>
+      <div class="todo-progress-text" id="todoProgressText">0 / 0</div>
+    </section>
+
+    <!-- 心情 -->
+    <section class="card" id="card-mood">
+      <div class="card-title"><span><span class="icon">💭</span>心情记录</span></div>
+      <div class="mood-emojis" id="moodEmojis">
+        <div class="mood-emoji" data-mood="😄">😄</div>
+        <div class="mood-emoji" data-mood="🙂">🙂</div>
+        <div class="mood-emoji" data-mood="😐">😐</div>
+        <div class="mood-emoji" data-mood="😔">😔</div>
+        <div class="mood-emoji" data-mood="😢">😢</div>
+      </div>
+      <textarea class="mood-note" id="moodNote" placeholder="写一句话记录这天的心情..." rows="2" maxlength="100"></textarea>
+      <div class="mood-calendar">
+        <div class="cal-header">
+          <button class="cal-nav" id="calPrev">‹</button>
+          <div class="cal-title" id="calTitle"></div>
+          <button class="cal-nav" id="calNext">›</button>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+      </div>
+    </section>
+
+    <!-- 习惯与打卡（原"每日打卡"，习惯打卡已合并至此） -->
+    <section class="card" id="card-checkin">
+      <div class="card-title">
+        <span class="card-title-left"><span class="icon">🎯</span>习惯与打卡</span>
+        <span class="card-title-right">
+          <div class="view-tabs" id="checkinViewTabs">
+            <button class="view-tab active" data-mode="list">并列</button>
+            <button class="view-tab" data-mode="stack">堆叠</button>
+          </div>
+        </span>
+      </div>
+      <div class="card-body">
+        <div id="checkinContainer"></div>
+        <button class="btn" id="openHabitFormBtn" style="width:100%; margin-top:10px;">＋ 新建习惯</button>
+      </div>
+    </section>
+
+    <!-- 每日一句 -->
+    <section class="card quote-card col-full" id="card-quote">
+      <div class="card-title" style="justify-content:center;"><span><span class="icon">✨</span>每日一句</span></div>
+      <div class="quote-text" id="quoteText">点击下方按钮，获取今日能量</div>
+      <div class="quote-actions">
+        <button class="btn" id="newQuoteBtn">换一句</button>
+        <button class="btn btn-ghost" id="favoriteQuoteBtn">⭐ 收藏</button>
+      </div>
+      <div class="favorites-list" id="favoritesList" style="display:none;">
+        <div class="favorites-title">我的收藏</div>
+        <div id="favoritesItems"></div>
+      </div>
+    </section>
+
+    <!-- 便签 -->
+    <section class="card col-full" id="card-note">
+      <div class="card-title"><span><span class="icon">📝</span>快捷便签</span></div>
+      <textarea class="note-area" id="noteArea" placeholder="随手记点什么，自动保存..." maxlength="500"></textarea>
+      <div class="note-saved" id="noteSaved">已自动保存</div>
+    </section>
+
+    <!-- 坚持历程（时间机器） -->
+    <section class="card col-full" id="card-journey">
+      <div class="card-title">
+        <span class="card-title-left"><span class="icon">🌟</span>坚持历程</span>
+        <span class="card-title-right" style="font-size:11px;color:var(--text-secondary)">时间机器</span>
+      </div>
+      <div class="card-body">
+        <!-- 日期选择器 -->
+        <div class="journey-date-row">
+          <label style="font-size:13px;color:var(--text-secondary)">选择日期：</label>
+          <input type="date" id="journeyDate">
+        </div>
+        <!-- 当日汇总标签 -->
+        <div class="journey-summary" id="journeySummary"></div>
+        <!-- 当日详情（可编辑） -->
+        <div id="journeyDetail"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- 设置面板 -->
+<div class="settings-overlay" id="settingsOverlay">
+  <div class="settings-panel">
+    <div class="settings-header">
+      <h2>⚙️ 设置</h2>
+      <button class="settings-close" id="closeSettings">✕</button>
+    </div>
+
+    <!-- 昵称 -->
+    <div class="setting-row">
+      <div><div class="setting-label">昵称</div><div class="setting-desc">显示在问候语中</div></div>
+      <div class="setting-control"><input type="text" class="text-input" id="nicknameInput" placeholder="输入昵称" maxlength="10"></div>
+    </div>
+
+    <!-- 头像（升级：emoji + 本地上传 + 网络URL） -->
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">头像</div>
+        <div class="setting-desc">可选 emoji、上传本地图片或粘贴网络图片链接</div>
+      </div>
+      <div class="setting-control">
+        <!-- 预览 -->
+        <div class="avatar-preview-sm" id="avatarPreviewSm"></div>
+        <!-- emoji 选择 -->
+        <div class="emoji-picker" id="avatarPicker">
+          <span class="emoji-option" data-emoji="😊">😊</span>
+          <span class="emoji-option" data-emoji="🌟">🌟</span>
+          <span class="emoji-option" data-emoji="🐱">🐱</span>
+          <span class="emoji-option" data-emoji="🌸">🌸</span>
+          <span class="emoji-option" data-emoji="🚀">🚀</span>
+          <span class="emoji-option" data-emoji="🌙">🌙</span>
+        </div>
+        <!-- 上传本地图片 -->
+        <button class="upload-btn" id="uploadAvatarBtn">📷 上传本地图片</button>
+        <input type="file" id="avatarFileInput" accept="image/*" style="display:none">
+        <!-- 网络图片 URL -->
+        <input type="text" class="text-input avatar-url-input" id="avatarUrlInput" placeholder="粘贴图片链接（https://...）">
+      </div>
+    </div>
+
+    <!-- 主题色 -->
+    <div class="setting-row">
+      <div><div class="setting-label">主题色</div></div>
+      <div class="setting-control" id="colorPicker">
+        <div class="color-dot active" data-color="#6CB4EE" style="background:#6CB4EE"></div>
+        <div class="color-dot" data-color="#6BCB77" style="background:#6BCB77"></div>
+        <div class="color-dot" data-color="#FFB347" style="background:#FFB347"></div>
+        <div class="color-dot" data-color="#FF6B9D" style="background:#FF6B9D"></div>
+        <div class="color-dot" data-color="#9B7EDE" style="background:#9B7EDE"></div>
+      </div>
+    </div>
+
+    <!-- 深色模式 -->
+    <div class="setting-row">
+      <div><div class="setting-label">深色模式</div></div>
+      <div class="setting-control"><div class="toggle" id="darkModeToggle"></div></div>
+    </div>
+
+    <div class="setting-row">
+      <div><div class="setting-label">显示模块</div><div class="setting-desc">关闭后将隐藏对应卡片</div></div>
+    </div>
+    <div class="setting-row"><span class="setting-label">📋 待办</span><div class="toggle on" data-module="todo"></div></div>
+    <div class="setting-row"><span class="setting-label">🎯 习惯</span><div class="toggle on" data-module="habit"></div></div>
+    <div class="setting-row"><span class="setting-label">💭 心情</span><div class="toggle on" data-module="mood"></div></div>
+    <div class="setting-row"><span class="setting-label">✅ 每日打卡</span><div class="toggle on" data-module="checkin"></div></div>
+    <div class="setting-row"><span class="setting-label">✨ 每日一句</span><div class="toggle on" data-module="quote"></div></div>
+    <div class="setting-row"><span class="setting-label">📝 便签</span><div class="toggle on" data-module="note"></div></div>
+    <div class="setting-row"><span class="setting-label">🌟 坚持历程</span><div class="toggle on" data-module="journey"></div></div>
+
+    <div class="settings-actions">
+      <button class="btn btn-ghost" id="clearCheckinsBtn">清空所有打卡项</button>
+    </div>
+    <div class="settings-actions">
+      <button class="btn btn-ghost" id="exportBtn">📤 导出数据</button>
+      <button class="btn btn-ghost" id="importBtn">📥 导入数据</button>
+      <button class="btn btn-danger" id="resetBtn">🔄 恢复默认</button>
+    </div>
+    <input type="file" id="importFile" accept=".json" style="display:none">
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script src = "app.js" defer></script>
+
+<!-- 新建习惯高级弹窗 -->
+<div class="modal-mask" id="habitFormMask" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;">
+  <div class="modal" id="habitModal" style="width:92%;max-width:420px;background:var(--card-bg,#fff);border-radius:14px;padding:18px;box-shadow:0 8px 32px rgba(0,0,0,0.2);box-sizing:border-box;">
+    <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 style="margin:0;font-size:17px;">新建习惯</h3>
+      <button class="modal-close" id="hfClose" style="background:none;border:none;font-size:20px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row" style="margin-bottom:12px;">
+        <label style="display:block;font-size:13px;margin-bottom:4px;color:var(--text-secondary,#666);">习惯名称</label>
+        <input type="text" id="hfName" placeholder="如：跑步、阅读" maxlength="20" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:14px;">
+      </div>
+      <div class="form-row" style="margin-bottom:12px;">
+        <label style="display:block;font-size:13px;margin-bottom:4px;color:var(--text-secondary,#666);">每日目标</label>
+        <input type="number" id="hfTarget" placeholder="如：30（分钟/次/页）" min="1" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:14px;">
+      </div>
+      <div class="form-row" style="margin-bottom:12px;">
+        <label style="display:block;font-size:13px;margin-bottom:4px;color:var(--text-secondary,#666);">图标选择</label>
+        <div class="habit-icon-picker" id="habitIconPicker" style="display:flex;gap:8px;flex-wrap:wrap;">
+          <span class="habit-icon-option" data-e="🏃">🏃</span>
+          <span class="habit-icon-option" data-e="📖">📖</span>
+          <span class="habit-icon-option" data-e="💧">💧</span>
+          <span class="habit-icon-option" data-e="🧘">🧘</span>
+          <span class="habit-icon-option" data-e="✍️">✍️</span>
+          <span class="habit-icon-option" data-e="💪">💪</span>
+          <span class="habit-icon-option" data-e="🎯">🎯</span>
+          <span class="habit-icon-option" data-e="🌅">🌅</span>
+          <span class="habit-icon-option" data-e="🥗">🥗</span>
+          <span class="habit-icon-option" data-e="📈">📈</span>
+        </div>
+      </div>
+      <div class="form-row" style="margin-bottom:12px;">
+        <label style="display:block;font-size:13px;margin-bottom:4px;color:var(--text-secondary,#666);">分类</label>
+        <select id="hfCategory" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:14px;">
+          <option value="健康">健康</option>
+          <option value="学习">学习</option>
+          <option value="工作">工作</option>
+          <option value="生活">生活</option>
+          <option value="其他">其他</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label style="display:block;font-size:13px;margin-bottom:4px;color:var(--text-secondary,#666);">长期计划天数</label>
+        <input type="number" id="hfPlanDays" placeholder="如：90（天）" min="1" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:14px;">
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px;">
+      <button class="btn btn-ghost" id="hfCancel">取消</button>
+      <button class="btn" id="hfSubmit">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- 心情详情弹窗 -->
+<div class="modal-mask" id="moodDetailModal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;">
+  <div class="modal" style="width:92%;max-width:420px;background:var(--card-bg,#fff);border-radius:14px;padding:18px;box-shadow:0 8px 32px rgba(0,0,0,0.2);box-sizing:border-box;">
+    <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 id="mdTitle" style="margin:0;font-size:17px;">心情详情</h3>
+      <button class="modal-close" id="mdClose" style="background:none;border:none;font-size:20px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div id="mdContent" style="font-size:14px;line-height:1.7;color:var(--text-secondary,#333);"></div>
+  </div>
+</div>
+</body>
+</html>
