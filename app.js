@@ -1778,7 +1778,7 @@ const GD_TAG_COLORS = {
 /* ---------- 【本轮改造】真实后端地址 ----------
    后端 Python 服务通过内网穿透部署，已替代本地的 127.0.0.1:8080。
    以后换隧道域名，只改这一行。 */
-const API_BASE = 'https://studio-si00008-novarise-api.api-inference.modelscope.net';
+const API_BASE = '';
 
 // 游戏 ID → 显示名（菜单与面板共用；接口没返回 label 时用它兜底）
 const GD_GAME_LABELS = {
@@ -1936,7 +1936,7 @@ async function fetchRealGameData(gameId, timeoutMs) {
       noTokenErr.code = 'NO_DF_TOKEN';
       throw noTokenErr;
     }
-    extraHeaders['Authorization'] = 'Bearer ' + token;
+    extraHeaders['X-Import-Token'] = token;
   }
 
   // 手动超时：避免「加载中…」一直转圈
