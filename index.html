@@ -6,6 +6,14 @@
 <title>冉星 Novarise</title>
 <meta name="description" content="冉星 Novarise - 每天打开一次的生活仪表盘">
 <style>
+/* ============================================================
+   【分区索引｜CSS】整个文件只保留一个样式标签，原有规则一行未改。
+     ① 全局基础样式（变量 / 主题 / 基础排版）
+     ② 头部导航样式（.header / .avatar / .greeting）
+     ③ 游戏面板样式（.gd-* / .rp-* / .card）
+     ④ 待办 / 习惯 / 心情 / 便签等业务模块样式
+     ⑤ 【本次新增】水鱼 Token 绑定卡片样式（.df-token-*，写在本样式表末尾）
+   ============================================================ */
 /* ========== CSS 变量与主题 ========== */
 :root {
   --primary: #6CB4EE;
@@ -1172,6 +1180,47 @@ body {
   50%      { opacity: 0.92; }
 }
 
+/* ============================================================
+   【分区 5｜新增】水鱼 Token 绑定卡片样式
+   类名用 .df-token-card 而不是 .card：showGameDashboard 进入游戏面板时
+   会把所有 .card 隐藏，而 Token 卡片需要一直可见，因此单独命名。
+   视觉参数全部取自现有变量，保证与页面风格一致（浅卡面 / 细边框 / 16 圆角）。
+   ============================================================ */
+.df-token-card {
+  grid-column: 1 / -1;                  /* 与 #gameDashboard 一致：独占一整行 */
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px 18px;
+  transition: box-shadow 0.2s, background 0.3s;
+}
+.df-token-card:hover { box-shadow: var(--shadow-hover); }
+.df-token-head {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  font-size: 14px; font-weight: 600; color: var(--text);
+}
+.df-token-desc {
+  font-size: 12px; color: var(--text-secondary);
+  line-height: 1.7; margin: 6px 0 12px;
+}
+.df-token-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.df-token-input {
+  flex: 1; min-width: 180px; padding: 11px 13px;
+  font-size: 13px; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 10px;
+  outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+}
+.df-token-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+.df-token-status { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.df-token-badge {
+  font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 20px;
+  background: rgba(107, 203, 119, 0.16); color: #3f7d49;
+}
+[data-theme="dark"] .df-token-badge { background: rgba(107, 203, 119, 0.24); color: #8fe39a; }
+.df-token-tip { font-size: 11px; color: var(--text-secondary); margin-top: 10px; line-height: 1.6; }
+.df-token-hidden { display: none !important; }
+
 </style>
 </head>
 <body>
@@ -1191,6 +1240,41 @@ body {
   </header>
 
   <main class="grid">
+    <!-- ============================================================
+         【分区 3｜新增】水鱼查分器 Token 绑定卡片
+         位置：Header 下方、游戏面板 #gameDashboard 上方（同样 grid-column:1/-1）
+         存储：localStorage['novarise_df_token']，后端 FastAPI 不存储任何 Token
+         ============================================================ -->
+    <section class="df-token-card" id="dfTokenCard">
+      <div class="df-token-head">
+        🔗 绑定水鱼查分器 Token
+        <span style="font-size:11px;font-weight:400;color:var(--text-secondary);">（用于获取你的真实舞萌成绩）</span>
+      </div>
+      <div class="df-token-desc">
+        Token 只保存在你本机浏览器，不上传服务器；每次查分由前端通过 <code style="font-size:11px;">X-Import-Token</code> 请求头透传，后端用完即弃。
+        获取方式：登录
+        <a href="https://www.diving-fish.com/maimaidxprober/" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:none;">水鱼查分器</a>
+        玩家页 →「导入 Token」。
+      </div>
+
+      <!-- 未绑定状态：输入框 + 保存按钮 -->
+      <div class="df-token-row" id="dfTokenUnbound">
+        <input type="password" id="dfTokenInput" class="df-token-input"
+               placeholder="请输入你的水鱼 Import-Token" autocomplete="off" spellcheck="false">
+        <button id="bindTokenBtn" type="button" class="btn">保存绑定</button>
+      </div>
+
+      <!-- 已绑定状态：隐藏输入框，只显示状态 + 解绑 -->
+      <div class="df-token-status df-token-hidden" id="dfTokenBound">
+        <span class="df-token-badge" id="dfTokenBoundText">✅ 已绑定水鱼 Token</span>
+        <button id="unbindTokenBtn" type="button" class="btn btn-ghost btn-sm">解绑</button>
+      </div>
+
+      <div class="df-token-tip">提示：Import-Token 是水鱼账号级凭证，请勿提交到公开仓库或截图分享。<br>
+        若绑定后查分一直提示「网络请求失败 / Failed to fetch」，多为部署平台网关未放行
+        <code style="font-size:11px;">X-Import-Token</code> 这个自定义请求头（预检被拒），与本地 Token 无关。</div>
+    </section>
+
     <!-- ========== 【新增】多游戏数据面板：默认隐藏，选中右侧游戏后显示 ========== -->
     <div id="gameDashboard" style="display:none;grid-column:1/-1;">
 
@@ -1653,6 +1737,8 @@ body {
 </div>
 
 <script>
+// ========== 【分区 4 / 5】原有脚本块①（未重排、未改逻辑） ==========
+// 内容：右侧游戏折叠菜单（分区 4）+ 早期占位版 AI 聊天窗（分区 5，真实 AI 在下方主逻辑里）
 /* ========== 【新增】游戏折叠菜单 + AI 聊天悬浮窗：仅服务本次新增控件，不触碰 app.js 既有逻辑 ========== */
 (function () {
   'use strict';
@@ -1764,6 +1850,8 @@ body {
 </script>
 
 <script>
+// ========== 【分区 5】原有脚本块②（未重排、未改逻辑） ==========
+// 内容：AI 模型选择器 + 各平台 API Key 设置，属「原有业务模块」
 /* ========== 【新增】AI 模型选择器 + API Key 设置：只绑定本次新增控件，不改动上面既有逻辑 ========== */
 (function () {
   'use strict';
@@ -1864,7 +1952,126 @@ body {
   refreshKeyState();
 })();
 </script>
+<!-- ============================================================
+     【分区 3｜新增】Token 绑定模块
+     职责：水鱼 Import-Token 的保存 / 解绑 / 状态渲染。
+     存储 key：novarise_df_token
+     说明：后端 FastAPI 完全无状态，Token 只在本机浏览器与请求头里存在。
+     跨模块协作：绑定成功后调用 window.__nvRefreshMaimai()（若正停在舞萌面板则立即刷新），
+                 解绑后调用 window.__nvClearMaimai()（清空已加载的舞萌数据并显示占位）。
+     这两个钩子由下方「分区 4」定义，用户点击时早已就绪。
+     ============================================================ -->
 <script>
+(function () {
+  'use strict';
+
+  var DF_TOKEN_KEY = 'novarise_df_token';
+
+  /* ---------- 读写 ---------- */
+  function getDfToken() {
+    try { return (localStorage.getItem(DF_TOKEN_KEY) || '').trim(); } catch (e) { return ''; }
+  }
+  function setDfToken(value) {
+    try { localStorage.setItem(DF_TOKEN_KEY, value); return true; } catch (e) { return false; }
+  }
+  function clearDfToken() {
+    try { localStorage.removeItem(DF_TOKEN_KEY); } catch (e) { /* 隐私模式可能抛错，忽略 */ }
+  }
+
+  /* ---------- 状态渲染：有 Token → 显示已绑态；无 → 显示输入框 ---------- */
+  function renderDfTokenUI() {
+    var unbound = document.getElementById('dfTokenUnbound');
+    var bound = document.getElementById('dfTokenBound');
+    var input = document.getElementById('dfTokenInput');
+    var isBound = !!getDfToken();
+
+    if (unbound) unbound.classList.toggle('df-token-hidden', isBound);
+    if (bound) bound.classList.toggle('df-token-hidden', !isBound);
+    // 已绑定后不在页面里留明文
+    if (isBound && input) input.value = '';
+  }
+
+  /* ---------- 提示：优先复用页面原有 showToast ---------- */
+  function dfToast(msg) {
+    if (typeof showToast === 'function') { showToast(msg); return; }
+
+    // 兜底：极简顶部悬浮 Toast（深色半透明、白字、3 秒消失、无外部依赖）
+    var t = document.getElementById('dfFallbackToast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'dfFallbackToast';
+      t.style.cssText = 'position:fixed;top:24px;left:50%;transform:translateX(-50%);'
+        + 'background:rgba(0,0,0,0.78);color:#fff;font-size:13px;padding:10px 20px;'
+        + 'border-radius:20px;z-index:3000;white-space:nowrap;max-width:90vw;'
+        + 'overflow:hidden;text-overflow:ellipsis;display:none;';
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.display = 'block';
+    clearTimeout(t._timer);
+    t._timer = setTimeout(function () { t.style.display = 'none'; }, 3000);
+  }
+
+  /* ---------- 保存绑定 ---------- */
+  function bindToken() {
+    var input = document.getElementById('dfTokenInput');
+    var value = input && input.value ? input.value.trim() : '';
+
+    if (!value) { dfToast('Token不能为空'); return; }
+    if (!setDfToken(value)) { dfToast('本地存储不可用，请关闭隐私模式后重试'); return; }
+
+    if (input) input.value = '';
+    renderDfTokenUI();
+    dfToast('绑定成功');
+
+    // 自动触发一次舞萌成绩刷新（仅在当前正停留在舞萌面板时生效）
+    if (typeof window.__nvRefreshMaimai === 'function') window.__nvRefreshMaimai();
+  }
+
+  /* ---------- 解绑 ---------- */
+  function unbindToken() {
+    clearDfToken();
+    renderDfTokenUI();
+    dfToast('已解绑');
+
+    // 清空面板里已加载的舞萌数据，改显示占位提示
+    if (typeof window.__nvClearMaimai === 'function') window.__nvClearMaimai();
+  }
+
+  /* ---------- 入口 ---------- */
+  function initDfToken() {
+    var bindBtn = document.getElementById('bindTokenBtn');
+    var unbindBtn = document.getElementById('unbindTokenBtn');
+    var input = document.getElementById('dfTokenInput');
+
+    if (bindBtn) bindBtn.addEventListener('click', bindToken);
+    if (unbindBtn) unbindBtn.addEventListener('click', unbindToken);
+    if (input) input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); bindToken(); }
+    });
+
+    renderDfTokenUI();   // 页面初始化时按 localStorage 渲染绑定状态
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDfToken);
+  } else {
+    initDfToken();       // 本脚本在 body 末尾，此时 DOM 已就绪
+  }
+})();
+</script>
+
+<script>
+// ============================================================
+// 【分区导航｜JS】本次只做结构与新增，未重排任何原有代码（避免 IIFE 执行时机
+// 与 const 声明时序被破坏）。各分区实际位置如下：
+//   分区 1 全局工具函数   → 搜 "// ---------- 工具 ----------"
+//   分区 2 全局状态与常量 → 搜 STORAGE_KEY / DATA_VERSION / API_BASE / mockGameData
+//   分区 3 Token 绑定模块 → 上方独立的脚本块（新增）
+//   分区 4 游戏面板业务   → 搜 "// 亮点标签的三种配色"
+//   分区 5 原有业务模块   → 待办 / 习惯 / 心情 / 打卡 / 便签 / 旅程 / AI
+//   分区 6 页面初始化入口 → 搜 "【分区 6】"
+// ============================================================
 /* ============================================
    冉星 Novarise v4 - 主逻辑
    localStorage 键名: Novarise_data
@@ -1875,11 +2082,13 @@ body {
    4) 【修改点】卡片折叠时标题右侧显示概览数据（待办/习惯/心情）
    5) 【修改点】心情日历显示待办/打卡/心情事件小圆点，点击日期弹出当日详情弹窗
    ============================================ */
+// ========== 【分区 2】全局状态与常量 ==========
 const STORAGE_KEY = 'Novarise_data';
 // 【本轮】数据版本号：旧数据读进来后由 migrateData 统一补齐字段并升到最新版本
 const DATA_VERSION = '2.4';
 const TODO_TYPES = ['工作', '生活', '学习', '其他'];
 
+// ========== 【分区 1】全局工具函数（Toast / 存储 / 日期 / 转义等公共方法） ==========
 // ---------- 工具 ----------
 function todayStr() {
   const d = new Date();
@@ -3195,6 +3404,7 @@ function bindEvents() {
   }, 500));
 }
 
+// ========== 【分区 6】页面初始化入口（主业务启动：读数据 → 包裹卡片 → 绑事件 → 首渲染） ==========
 // ---------- 启动 ----------
 document.addEventListener('DOMContentLoaded', () => {
   loadData();
@@ -3298,6 +3508,7 @@ function resetData() {
    - showGameDashboard / backToLifePanel：面板与生活卡片互斥切换
    ============================================ */
 
+// ========== 【分区 4】游戏面板业务逻辑（游戏切换 / 查分请求 / 数据渲染） ==========
 // 亮点标签的三种配色（沿用 index.html 里原有标签的配色，保证视觉一致）
 const GD_TAG_COLORS = {
   blue: 'background:rgba(108,180,238,0.16);color:#3d7ea6;',
@@ -3454,6 +3665,21 @@ async function fetchRealGameData(gameId, timeoutMs) {
   const url = API_BASE + '/api/get_game_data?game=' + encodeURIComponent(gameId);
   const limit = timeoutMs || 12000;
 
+  /* ---------- 【新增】maimai 专用：透传水鱼 Token ----------
+     后端 FastAPI 无状态，只认请求头 X-Import-Token。
+     其他游戏（dancecube / lol / hok / valorant）走下面的原逻辑，一行未改。 */
+  const extraHeaders = {};
+  if (gameId === 'maimai') {
+    const token = readDfToken();
+    if (!token) {
+      // 没有 Token 就不发网络请求，交给 showGameDashboard 渲染占位 + Toast
+      const noTokenErr = new Error('未绑定Token，无法获取成绩');
+      noTokenErr.code = 'NO_DF_TOKEN';
+      throw noTokenErr;
+    }
+    extraHeaders['X-Import-Token'] = token;
+  }
+
   // 手动超时：避免「加载中…」一直转圈
   const controller = new AbortController();
   const timer = setTimeout(function () { controller.abort(); }, limit);
@@ -3461,14 +3687,22 @@ async function fetchRealGameData(gameId, timeoutMs) {
   try {
     const res = await fetch(url, {
       method: 'GET',
-      headers: { 'Accept': 'application/json' },
+      headers: Object.assign({ 'Accept': 'application/json' }, extraHeaders),
       cache: 'no-store',
       signal: controller.signal,
     });
 
     if (!res.ok) {
-      // 4xx 多为鉴权/路径问题，5xx 是后端报错，原样带出来方便定位
-      throw new Error('HTTP ' + res.status + ' ' + (res.statusText || ''));
+      // 4xx 多为鉴权/路径问题，5xx 是后端报错，原样带出来方便定位。
+      // 【新增】仅 maimai：把后端返回的 detail 拼进错误信息，Token 失效提示就在里面。
+      let detail = '';
+      if (gameId === 'maimai') {
+        try {
+          const errBody = await res.json();
+          if (errBody && errBody.detail) detail = ' ' + String(errBody.detail);
+        } catch (e) { /* 响应不是 JSON 就保持原样 */ }
+      }
+      throw new Error('HTTP ' + res.status + ' ' + (res.statusText || '') + detail);
     }
 
     const raw = await res.json();
@@ -3655,10 +3889,92 @@ function renderGameDashboard(gameId, data) {
   return true;
 }
 
+/* ---------- 【新增｜分区 4】水鱼 Token：读取与占位渲染 ----------------------------
+   写入口在「分区 3」的卡片模块，这里只负责读取 + 面板占位。
+   key 固定为 novarise_df_token（与分区 3 完全一致）。
+   ----------------------------------------------------------------------------- */
+const DF_TOKEN_STORAGE_KEY = 'novarise_df_token';
+
+function readDfToken() {
+  try { return (localStorage.getItem(DF_TOKEN_STORAGE_KEY) || '').trim(); } catch (e) { return ''; }
+}
+
+// 面板当前显示的游戏；返回生活面板时置空（供分区 3 的绑定/解绑钩子判断）
+let gdCurrentGame = null;
+
+// 判断异常是否属于「Token 无效 / 过期」：后端 detail 形如「水鱼 Import-Token 无效或已过期」
+function isDfTokenError(err) {
+  const msg = (err && err.message) ? String(err.message) : String(err || '');
+  return /(import-token|import token|token)[\s\S]{0,16}(无效|过期|有误|invalid|expired)/i.test(msg)
+      || /HTTP\s*(401|403)/i.test(msg);
+}
+
+// 未绑定 / Token 失效：把舞萌面板整块替换成占位提示
+function renderGdTokenMissing(gameId, reason) {
+  const label = GD_GAME_LABELS[gameId] || gameId;
+  const hint = reason || '未绑定Token，无法获取成绩';
+  const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+
+  setText('gdGameName', label + ' · 玩家信息');
+  setText('gdPlayerTag', '未绑定 Token');
+  setText('gdPlayerName', hint);
+  setText('gdPlayerSub', '请在上方「🔗 绑定水鱼查分器 Token」处填入你的 Import-Token');
+  setText('gdPlayerLevel', '等级 —');
+  setText('gdPlayerRank', '段位 —');
+  const avatarEl = document.getElementById('gdAvatar');
+  if (avatarEl) avatarEl.textContent = '🔒';
+
+  const statGrid = document.getElementById('gdStatsGrid');
+  if (statGrid) {
+    statGrid.innerHTML = [1, 2, 3, 4].map(() => `
+      <div style="padding:10px 12px;border-radius:12px;background:var(--bg,#f1f3f6);">
+        <div style="font-size:11px;color:var(--text-secondary,#666);">未绑定</div>
+        <div class="gd-stat-value" style="font-size:20px;font-weight:700;color:var(--text-secondary,#666);margin-top:2px;">—</div>
+      </div>`).join('');
+  }
+
+  const matchList = document.getElementById('gdMatchesList');
+  if (matchList) {
+    matchList.innerHTML = [1, 2, 3, 4, 5].map(() => `
+      <div class="gd-match-row" style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-radius:10px;background:var(--bg,#f1f3f6);font-size:13px;color:var(--text-secondary,#666);">
+        <span>未绑定 Token</span><span style="font-size:12px;">—</span>
+      </div>`).join('');
+  }
+
+  const highlightList = document.getElementById('gdHighlightsList');
+  if (highlightList) {
+    highlightList.innerHTML = '<span class="gd-highlight-tag" style="font-size:12px;padding:5px 10px;border-radius:20px;background:var(--bg,#f1f3f6);color:var(--text-secondary,#666);">绑定 Token 后显示真实亮点</span>';
+  }
+
+  // 底部说明复用既有 #gdTipText（首次需按原逻辑给它补 id）
+  let tipEl = document.getElementById('gdTipText');
+  if (!tipEl) {
+    const cand = Array.prototype.slice.call(document.querySelectorAll('#mod4-highlights div'))
+      .filter(el => !el.children.length && el.textContent.indexOf('接入') > -1)[0];
+    if (cand) { cand.id = 'gdTipText'; tipEl = cand; }
+  }
+  if (tipEl) tipEl.textContent = hint;
+}
+
+// 供「分区 3」Token 卡片调用的两个钩子
+window.__nvRefreshMaimai = function () {
+  // 只有当前正停留在舞萌面板才需要立刻重拉，否则用户下次点舞萌时自然带上新 Token
+  if (gdCurrentGame === 'maimai') showGameDashboard('maimai');
+};
+window.__nvClearMaimai = function () {
+  const gd = document.getElementById('gameDashboard');
+  const visible = gd && gd.getAttribute('style') && /display:\s*grid/.test(gd.getAttribute('style'));
+  if (visible && gdCurrentGame === 'maimai') {
+    renderGdTokenMissing('maimai');
+  }
+};
+
 // 显示游戏面板：先切到面板并铺「加载中...」，再请求真实数据；失败就把错误落在面板里
 async function showGameDashboard(gameId) {
   const gd = document.getElementById('gameDashboard');
   if (!gd) return;
+
+  gdCurrentGame = gameId;        // 【新增】记录当前面板游戏，解绑时据此清空舞萌数据
 
   const seq = ++gdRequestSeq;    // 记住这一次点击，回包时用它判断自己是否已被新点击取代
 
@@ -3683,6 +3999,22 @@ async function showGameDashboard(gameId) {
     renderGameDashboard(gameId, data);
   } catch (err) {
     if (seq !== gdRequestSeq) return;
+
+    /* 【新增】未绑定 Token：本次请求压根没发出去，面板显示占位 + Toast 引导去绑定 */
+    if (err && err.code === 'NO_DF_TOKEN') {
+      renderGdTokenMissing(gameId);
+      showToast('请先在上方绑定水鱼 Token');
+      return;
+    }
+
+    /* 【新增】Token 无效 / 过期：面板占位 + Toast 引导解绑重绑 */
+    if (gameId === 'maimai' && isDfTokenError(err)) {
+      renderGdTokenMissing(gameId, 'Token 无效或已过期');
+      showToast('Token无效或已过期，请解绑后重新绑定');
+      console.warn('[gameDashboard] Token 失效：', gameId, err);
+      return;
+    }
+
     renderGdError(gameId, err);
     console.warn('[gameDashboard] 请求失败：', gameId, err);   // 控制台留完整异常，方便和 DevTools 对
   }
@@ -3692,6 +4024,7 @@ async function showGameDashboard(gameId) {
 function backToLifePanel() {
   const gd = document.getElementById('gameDashboard');
   if (gd) gd.style.display = 'none';
+  gdCurrentGame = null;          // 【新增】面板关闭后不再指向任何游戏
 
   // 先全部还原，再让 applyModuleVisibility() 按用户配置收一次，避免把已关闭的模块放出来
   document.querySelectorAll('.card').forEach(card => {
@@ -4405,6 +4738,7 @@ async function sendAiMessage() {
    这里在 document 的【捕获阶段】拦下这些事件并改用本文件的实现，
    内联旧实现不会再被执行。将来把那段内联脚本删掉，这段拦截依然正常。
    ============================================ */
+// ========== 【分区 6】页面初始化入口（游戏面板 / AI / 事件拦截的初始化） ==========
 document.addEventListener('DOMContentLoaded', () => {
   ensureGdBackBtn();
 
