@@ -2,7 +2,7 @@
 Novarise 极简后端 —— 纯 FastAPI，不依赖 NoneBot。
 
 数据来源：
-    maimai                     → 水鱼查分器 player/records（按请求头 Authorization: Bearer 透传，无状态）
+    maimai                     → 水鱼查分器 player/records（按请求头 X-Import-Token 透传，无状态）
     dancecube / lol / hok / valorant → 内置假数据
 
 启动：
@@ -18,7 +18,7 @@ import os
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -32,7 +32,7 @@ app = FastAPI(
 # CORS
 #   allow_credentials=False 是硬约束：allow_origins=["*"] 与 credentials 不能共存，
 #   否则浏览器直接拒绝整条策略。
-#   allow_headers=["*"] 让请求头 Authorization 能通过预检（OPTIONS）。
+#   allow_headers=["*"] 让自定义请求头 X-Import-Token 能通过预检（OPTIONS）。
 # ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
@@ -44,7 +44,7 @@ app.add_middleware(
 
 # ---------------------------------------------------------------------------
 # 水鱼查分器
-#   后端不保存任何 Token：每次请求都由前端通过 Authorization: Bearer 头带入，转发后即丢弃。
+#   后端不保存任何 Token：每次请求都由前端通过 X-Import-Token 头带入，转发后即丢弃。
 # ---------------------------------------------------------------------------
 DIVING_FISH_RECORDS_URL = "https://www.diving-fish.com/api/maimaidxprober/player/records"
 REQUEST_TIMEOUT = 10.0
@@ -401,34 +401,19 @@ def hello():
 
 @app.get("/api/get_game_data", summary="按游戏取游戏面板数据（maimai 为水鱼实时数据）")
 async def get_game_data(
-    request: Request,
     game: str = Query(..., description="maimai / dancecube / lol / hok / valorant"),
+    x_import_token: str | None = Header(
+        default=None,
+        alias="X-Import-Token",
+        description="水鱼查分器个人 Import-Token，仅 maimai 需要；后端不存储，请求完即丢弃",
+    ),
 ):
     if game == "maimai":
-        # 前端发标准头 Authorization: Bearer <水鱼 Import-Token>；后端只拆包，不存储
-        auth = request.headers.get("Authorization")
-        if not auth:
-            raise HTTPException(
-                status_code=401,
-                detail=(
-                    "缺少 Authorization 请求头：maimai 查分需要 "
-                    "Authorization: Bearer <你的水鱼 Import-Token>"
-                ),
-            )
-        prefix = "bearer "
-        if not auth.strip().lower().startswith(prefix):
-            raise HTTPException(
-                status_code=401,
-                detail=(
-                    "Authorization 请求头格式不对：必须是 "
-                    "Authorization: Bearer <你的水鱼 Import-Token>"
-                ),
-            )
-        token = auth.strip()[len(prefix):].strip()
+        token = (x_import_token or "").strip()
         if not token:
             raise HTTPException(
                 status_code=401,
-                detail="Authorization 请求头里没有 Token：Bearer 后面是空的",
+                detail="缺少 X-Import-Token 请求头：maimai 查分需要你的水鱼 Import-Token",
             )
         payload = await fetch_maimai_records(token)
         return build_maimai_panel(payload)
