@@ -718,6 +718,8 @@ function addTodo() {
   const date = (dateInput && dateInput.value) ? dateInput.value : todayStr();
   data.todos.push({ id:'t'+Date.now(), text, done:false, date, type:document.getElementById('todoTypeSelect').value });
   input.value = ''; input.blur();
+  // 【新增】提交成功后把日期框重置回今日，避免下一条待办误带上次选的日期
+  if (dateInput) dateInput.value = todayStr();
   // 【修改点】实时刷新：新增待办后同步刷新打卡卡片与日历圆点
   saveData(); renderTodos(); renderCheckins(); renderMoodCalendar(); renderJourney();
   showToast('已添加');
@@ -1934,7 +1936,7 @@ async function fetchRealGameData(gameId, timeoutMs) {
       noTokenErr.code = 'NO_DF_TOKEN';
       throw noTokenErr;
     }
-    extraHeaders['X-Import-Token'] = token;
+    extraHeaders['Authorization'] = 'Bearer ' + token;
   }
 
   // 手动超时：避免「加载中…」一直转圈
@@ -2237,6 +2239,10 @@ async function showGameDashboard(gameId) {
 
   ensureGdBackBtn();
   gd.style.display = 'grid';     // 直接内联覆盖 HTML 上的 display:none
+
+  // 【新增】Token 绑定卡片只服务舞萌：舞萌显示，其余游戏一律隐藏
+  const dfCard = document.getElementById('dfTokenCard');
+  if (dfCard) dfCard.style.display = (gameId === 'maimai') ? '' : 'none';
   // 隐藏生活卡片；面板内部的 4 张卡（mod1~mod4）必须排除，否则会连面板一起隐藏
   document.querySelectorAll('.card').forEach(card => {
     if (gd.contains(card)) return;

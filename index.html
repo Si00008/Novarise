@@ -24,9 +24,13 @@
   </header>
 
   <main class="grid">
+
+    <!-- ========== 【新增】多游戏数据面板：默认隐藏，选中右侧游戏后显示 ========== -->
+    <div id="gameDashboard" style="display:none;grid-column:1/-1;">
+
     <!-- ============================================================
          【分区 3｜新增】水鱼查分器 Token 绑定卡片
-         位置：Header 下方、游戏面板 #gameDashboard 上方（同样 grid-column:1/-1）
+         位置：游戏面板 #gameDashboard 内部顶部、玩家信息卡片之前（同样 grid-column:1/-1）
          存储：localStorage['novarise_df_token']，后端 FastAPI 不存储任何 Token
          ============================================================ -->
     <section class="df-token-card" id="dfTokenCard">
@@ -35,7 +39,7 @@
         <span style="font-size:11px;font-weight:400;color:var(--text-secondary);">（用于获取你的真实舞萌成绩）</span>
       </div>
       <div class="df-token-desc">
-        Token 只保存在你本机浏览器，不上传服务器；每次查分由前端通过 <code style="font-size:11px;">X-Import-Token</code> 请求头透传，后端用完即弃。
+        Token 只保存在你本机浏览器，不上传服务器；每次查分由前端通过 <code style="font-size:11px;">Authorization</code> 请求头透传，后端用完即弃。
         获取方式：登录
         <a href="https://www.diving-fish.com/maimaidxprober/" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:none;">水鱼查分器</a>
         玩家页 →「导入 Token」。
@@ -58,9 +62,6 @@
         若绑定后查分一直提示「网络请求失败 / Failed to fetch」，多为部署平台网关未放行
         <code style="font-size:11px;">X-Import-Token</code> 这个自定义请求头（预检被拒），与本地 Token 无关。</div>
     </section>
-
-    <!-- ========== 【新增】多游戏数据面板：默认隐藏，选中右侧游戏后显示 ========== -->
-    <div id="gameDashboard" style="display:none;grid-column:1/-1;">
 
       <!-- 模块1：玩家信息 -->
       <section class="card" id="mod1-player">
@@ -163,6 +164,7 @@
       </div>
       <div class="todo-input-row">
         <input type="text" id="todoInput" placeholder="添加新待办..." maxlength="50" enterkeyhint="done">
+        <input type="date" id="todoDate" title="选择截止日期（默认今天）">
         <!-- 自定义的模糊日期输入框 -->
         <div class="fuzzy-date-box">
           <input type="text" id="filterYear" maxlength="4" placeholder="____"> 年
