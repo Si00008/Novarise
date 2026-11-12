@@ -1435,6 +1435,11 @@ function refreshAll() {
     mEl.value = today[1];
     dEl.value = today[2];
   }
+  // 【修改点】待办截止日期框初始值设为今天。
+  // 不给初值的话页面一打开该框是空的，addTodo() 虽然会兜底回退到今天，
+  // 但用户看不到实际日期，也不知道这条待办会落在哪一天。
+  const todoDateEl = document.getElementById('todoDate');
+  if (todoDateEl) todoDateEl.value = todayStr();
   if (!journeyDate) journeyDate = todayStr();
   document.getElementById('journeyDate').value = journeyDate;
 }
@@ -1661,6 +1666,19 @@ function bindEvents() {
       journeySaveMoodNote(e.target.dataset.journeyMoodNote, e.target.value);
     }
   }, 500));
+
+  // 【修改点】AI 输入框高度自适应
+  // 说明：现在 index.html 里的 #aiChatInput 还是单行 <input type="text">，
+  // 对单行 input 设 height = scrollHeight 会把输入框撑高、外观走形，
+  // 所以只在控件确实换成 <textarea> 时才接管，当前版本零副作用。
+  const aiInputEl = document.getElementById('aiChatInput');
+  if (aiInputEl) {
+    aiInputEl.addEventListener('input', function () {
+      if (this.tagName !== 'TEXTAREA') return;
+      this.style.height = 'auto';
+      this.style.height = this.scrollHeight + 'px';
+    });
+  }
 }
 
 // ========== 【分区 6】页面初始化入口（主业务启动：读数据 → 包裹卡片 → 绑事件 → 首渲染） ==========
@@ -3037,15 +3055,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (t.closest('#aiSettingsBtn')) { e.stopPropagation(); promptAiApiKey(); return; }
   }, true);
 
-  // 输入框回车发送（Shift+Enter 不拦截）
+  // 输入框回车逻辑：电脑端发送，手机端不发送
   document.addEventListener('keydown', e => {
-    if (e.key !== 'Enter' || e.shiftKey) return;
     const t = e.target;
-    if (t && t.id === 'aiChatInput') {
-      e.stopPropagation();
-      e.preventDefault();
-      sendAiMessage();
-    }
+    if (!t || t.id !== 'aiChatInput') return;
+    if (e.key !== 'Enter' || e.shiftKey) return;
+
+    const isMobile = window.innerWidth < 768;
+
+    // 手机端：Enter 不发送。这里依然要 stopPropagation —— 否则事件会继续落到
+    // 分区 5 的旧聊天逻辑上，触发 sendMessage() 往面板里塞一条
+    // “（AI 服务尚未接入…）” 的假回复。
+    if (isMobile) { e.stopPropagation(); return; }
+
+    // 电脑端：Enter 发送（Shift+Enter 不拦截，留给换行）
+    e.stopPropagation();
+    e.preventDefault();
+    sendAiMessage();
   }, true);
 
   // 【本轮】点击面板外部关闭 AI 聊天面板

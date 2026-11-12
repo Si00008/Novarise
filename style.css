@@ -41,6 +41,11 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   background: var(--bg); color: var(--text); line-height: 1.6;
   transition: background 0.3s, color 0.3s; padding-bottom: 40px;
+  /* 11.12 修正：全局防横向溢出 —— iOS 微信内置浏览器一旦发现元素超出视口，
+     会把整页 shrink-to-fit 缩小（两侧大留白、内容被挤压），必须从根上切断。 */
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 100vw;
 }
 .container { max-width: 1200px; margin: 0 auto; padding: 16px; }
 
@@ -911,6 +916,13 @@ body {
   box-shadow: 0 0 0 3px var(--primary-light);
 }
 
+/* 发送键：手指点得中（11.12 修正）
+   注意 index.html 上带内联 padding:9px 14px，故 padding / min-height 都要 !important。 */
+#aiChatSend {
+  min-height: 48px !important;
+  padding: 0 16px !important;
+}
+
 /* 关闭按钮 */
 #closeAiChat {
   border-radius: 8px;
@@ -1044,6 +1056,25 @@ body {
    ========== 新增 4：移动端自适应 ==========
    ================================================================== */
 @media (max-width: 767px) {
+  /* 11.12 修正：移动端强制单列，杜绝网格把视口撑宽（iPhone 393px 为主要目标） */
+  /* 1fr 等价于 minmax(auto, 1fr)，下限是子项的 min-content，内容一宽就把整列撑出视口；
+     minmax(0, 1fr) 才真正锁死在容器宽度内 —— 这是 iOS shrink-to-fit 的根因修法。 */
+  .grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 12px !important;
+  }
+  /* gap 与 .card 原有的 margin-bottom:16px 会叠加成 28px，这里清掉让它只由 gap 决定 */
+  .grid > .card { margin-bottom: 0 !important; }
+  #gameDashboard { grid-template-columns: minmax(0, 1fr) !important; }
+  .card { padding: 16px !important; }
+
+  /* 11.12 修正：待办输入行挤了 6 个控件（文本框 / 日期 / 模糊日期盒 / 清除日期 /
+     类型下拉 / 添加按钮），不换行时 min-content 实测 478px —— 正是它把 .grid 整列
+     撑到 478px，触发 iOS 整页缩小。这里允许换行并放开收缩下限。 */
+  .todo-input-row { flex-wrap: wrap !important; }
+  .todo-input-row > * { min-width: 0 !important; }
+  .fuzzy-date-box { flex-wrap: wrap !important; max-width: 100% !important; }
+
   /* 悬浮球略缩小，仍居右下 */
   #aiChatBtn {
     right: 18px !important;
@@ -1065,9 +1096,9 @@ body {
     border-radius: 0 !important;
     animation: aiPanelInMobile 0.25s ease both;
   }
-  /* 底部输入区预留安全区（iPhone 刘海屏） */
+  /* 底部输入区预留安全区（iPhone 刘海屏）+ 避开 Netlify 右下广告角标（11.12 修正） */
   #aiChatPanel > div:last-child {
-    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px)) !important;
   }
   /* 右侧菜单在窄屏收窄靠边，避免遮挡主内容 */
   #rightPanel {
@@ -1212,3 +1243,14 @@ body {
 [data-theme="dark"] .df-token-badge { background: rgba(107, 203, 119, 0.24); color: #8fe39a; }
 .df-token-tip { font-size: 11px; color: var(--text-secondary); margin-top: 10px; line-height: 1.6; }
 .df-token-hidden { display: none !important; }
+
+/* ==================================================================
+   ========== 11.12 修正：折叠状态下隐藏「清除已完成」按钮 ==========
+   ================================================================== */
+.card.collapsed #clearDoneBtn { display: none !important; }
+
+/* 11.12 修正：待办卡折叠后，条目里的日期标签（.todo-date-tag，即「MM-DD · 类型」）
+   会因为没有卡片内边距而挤到行尾、把标题挤成两行，折叠态直接隐掉。
+   注：项目里没有 .todo-item-date / .todo-card 这两个类，对应真实结构是
+   .card.collapsed 与 .todo-date-tag。 */
+.card.collapsed .todo-date-tag { display: none !important; }
