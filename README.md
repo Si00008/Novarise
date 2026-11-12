@@ -1,193 +1,72 @@
-# Novarise 后端 API（纯 FastAPI）
+# 🌟 冉星 Novarise - 你的专属赛博生活仪表盘
+> 原生技术栈构建的轻量化个人仪表盘，聚合生活管理、AI 助手与多游戏成绩查询，做你赛博生活的中央控制台。
 
-脱离 NoneBot 的极简后端，只做三件事：CORS 放开、连通性测试、按游戏返回面板数据。
+## ✨ 核心特性
+1. 全栈零框架：前端仅 HTML/CSS/JS 三文件，后端纯 FastAPI 单文件，无构建工具、无冗余依赖，开箱即用。
+2. 多游戏成绩聚合：对接水鱼查分器开放 API，实时获取舞萌 DX B50、单曲成绩与段位数据；无状态透传架构，后端不存储任何用户 Token。
+3. 多模型 AI 助手：支持百炼、豆包、魔搭等多平台大模型自由切换，内置流式输出与深度思考过程展示。
+4. 沉浸式交互体验：全局卡片式折叠布局、深浅色主题无缝切换、移动端全适配，支持时间机器回溯历史数据。
+5. 隐私优先设计：所有第三方 Token、本地数据均存储于浏览器端；后端全程无状态、无数据库、无用户体系，请求用完即焚。
 
-## 文件说明
+## 🏗️ 技术架构
+1. 前端：原生 JavaScript 单页应用，零框架依赖，静态托管于 Netlify，自带全球 CDN 加速。
+2. 后端：Python FastAPI 异步接口，纯透传无状态设计，部署于魔搭 ModelScope 免费算力空间。
+3. 链路优化：通过 Netlify _redirects 实现同域代理，绕过云端网关跨域拦截，前端无感调用。
 
-| 文件 | 作用 |
-|---|---|
-| `main.py` | FastAPI 应用：CORS 中间件 + 3 个路由 + 5 个游戏的假数据 |
-| `requirements.txt` | 依赖（fastapi、uvicorn[standard]） |
-| `README.md` | 本文件 |
+## 📅 更新计划与日志
+详细版本更新记录请查看 [CHANGELOG.md](./CHANGELOG.md)。
 
-## 本地运行
+## 🔧 本地开发与部署
+### 💻 本地运行
+#### 1. 前端启动 (Frontend)。
+  1. 将项目克隆至本地后，使用 VSCode 打开前端根目录。
+  2. 安装并启用 Live Server 插件，右键 index.html 选择 Open with Live Server。
+>⚠️ 警告：禁止直接双击 HTML 文件打开。file:// 协议会导致浏览器的安全策略拦截 fetch 请求，且可能导致 localStorage 失效。
+  3. 本地联调后端：若后端服务运行在本地，请找到 app.js 中的 const API_BASE = '';，临时修改为 const API_BASE = 'http://127.0.0.1:8080';，即可直接请求本地接口。
 
-在本目录（`F:\Sundries\leisure\agent\Novarise\2.5-后端API`）执行：
-
-```bat
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8080 --reload
+#### 2. 后端启动 (Backend)
+  1. 进入后端目录，建议使用虚拟环境隔离依赖：
+```bash
+     # 创建虚拟环境
+     python -m venv .venv
+     # 激活虚拟环境 (Windows)
+     .venv\Scripts\activate
+     # 激活虚拟环境 (Mac/Linux)
+     source .venv/bin/activate
 ```
 
-启动后：
+  2. 安装所需依赖：
 
-- 控制台会打印 `Uvicorn running on http://0.0.0.0:8080`
-- 自检：浏览器打开 <http://127.0.0.1:8080/> ，应看到 `{"service":"Novarise API","status":"ok",...}`
-- 交互式文档：<http://127.0.0.1:8080/docs>
-
-> `--host 0.0.0.0` 是必须的：只写 `127.0.0.1` 时内网穿透（cpolar）连不进来。
-
-## 接口清单
-
-| 方法 | 路径 | 说明 | 示例返回 |
-|---|---|---|---|
-| GET | `/` | 服务自检，用来判断服务和隧道是否活着 | `{"service":"Novarise API","status":"ok","games":[...]}` |
-| GET | `/api/hello` | 连通性测试 | `{"msg": "Hello from Cloud API"}` |
-| GET | `/api/get_game_data` | 按游戏取面板数据，`game` 必填 | 见下方结构 |
-
-`game` 可选值：`maimai`、`dancecube`、`lol`、`hok`、`valorant`。传其他值返回 **404** 和可用列表。
-
-直接调用：
-
-```bat
-curl "http://127.0.0.1:8080/api/get_game_data?game=maimai"
+```bash
+     pip install -r requirements.txt
 ```
 
-## 返回结构
-
-与前端 `index.html` 里 `mockGameData` 的结构完全一致，所以前端拿到就能直接渲染：
-
-```json
-{
-  "label": "舞萌 DX",
-  "player": { "avatar": "🎵", "name": "NovaRise", "level": "Lv.170", "rank": "rating 14.02", "sub": "稳定型 · 主玩 EXPERT" },
-  "stats": [ { "label": "总场次", "value": "1326" } ],
-  "matches": [ { "main": "SSS · Glorious Crown", "sub": "100.8% · EXPERT" } ],
-  "highlights": [ { "text": "1502 连击", "color": "blue" } ],
-  "tip": "数据由 /api/get_game_data 实时返回……"
-}
+  3. 启动服务（默认监听 8080 端口）：
+```bash
+     python main.py
 ```
 
-- `highlights[].color` 只能写 `blue` / `green` / `amber`，前端只定义了这三种标签配色。
-- 前端同时兼容「直接返回游戏对象」和「包一层 `{code:0,data:{...}}`」，这里用的是直接返回，想让接口更规整可以自行加壳。
+  4. 启动成功后，访问 http://127.0.0.1:8080/docs 即可查看自动生成的 Swagger 接口文档，进行接口自测。
 
-## 与前端联调
-
-前端 `merged/index.html` 顶部有一行：
-
-```js
-const API_BASE = 'https://795eb38d.r1.cpolar.top';
+### 🌐 线上部署
+#### 1. 前端：Netlify 静态托管
+  1. 将代码推送至 GitHub 仓库。
+  2. 在 Netlify 中关联该仓库。构建命令留空，发布目录（Publish directory）选择前端文件所在目录。
+  3. ⚠️ 核心配置：确保前端根目录下包含一个名为 _redirects 的文件，内容为：
+```text
+    /api/*  https://Si00008-novarise-api.ms.show/api/:splat  200
 ```
+    (此配置用于绕过云端跨域拦截，通过 Netlify 边缘节点进行 API 代理。)
 
-把它改成当前能访问的地址即可，其余代码不用动：
+  4. 部署完成后，Netlify 会自动分配公网域名（如 xxx.netlify.app）。
 
-- 本地直连：`const API_BASE = 'http://127.0.0.1:8080';`
-- 内网穿透：换成 cpolar 给的域名
+#### 2. 后端：魔搭 ModelScope 创空间
+  1. 登录魔搭社区，新建一个 Python 类型的创空间 (Studio)。
+  2. 将 main.py、requirements.txt 以及必要的 Docker 配置文件上传至空间根目录。
+  3. 平台会自动识别 requirements.txt 进行依赖安装，并读取 main.py 启动 FastAPI 服务。
+  4. 获取魔搭分配的公网 API 地址（如 https://xxx.ms.show）。
+  5. 将该地址填入前端根目录的 _redirects 代理文件中，重新触发 Netlify 部署即可完成全链路联调。
 
-CORS 已全放开（`allow_origins=["*"]`, `allow_credentials=False`），`file://` 双击打开、本地 http 打开、跨域名访问都能直接请求。
-
-## 内网穿透（cpolar）
-
-```bat
-cpolar http 8080
-```
-
-拿到形如 `https://xxxx.r1.cpolar.top` 的域名后：
-
-1. 先验证隧道通不通：浏览器打开 `https://xxxx.r1.cpolar.top/`
-   - 看到 `{"service":"Novarise API"...}` → 通了，把域名填进前端 `API_BASE`
-   - 看到 cpolar 自己的 404 页（标题含 `The page you were looking for domain doesn't exist`）→ **隧道没指向任何服务**，重启隧道
-2. 免费版域名会定期更换，换了域名只需改前端 `API_BASE` 这一行。
-
-## 常见问题
-
-| 现象 | 原因 | 处理 |
-|---|---|---|
-| 浏览器控制台 `blocked by CORS policy` / `No 'Access-Control-Allow-Origin'` | 本文件的中间件没生效，或被人改成了 `allow_credentials=True` | 确认 `app.add_middleware(CORSMiddleware, ...)` 这段在 `app = FastAPI()` 之后、且 `allow_credentials=False` |
-| 前端提示 `HTTP 404` | `game` 参数拼错，或后端根本没加载这份 `main.py` | 用 `/game_data?game=` 的大小写与上面清单核对；`/docs` 里能看到全部路由 |
-| 前端提示 `Failed to fetch` | 域名/隧道不通、或后端没启动 | 浏览器直接开 `API_BASE + '/'`，看到 cpolar 404 页就是隧道问题 |
-| 隧道连不上但本地能访问 | uvicorn 绑在了 `127.0.0.1` | 启动加 `--host 0.0.0.0` |
-
-## 换成真实数据
-
-`GAME_DATA` 是唯一的数据来源，后面接数据库、爬虫或第三方 API 时，只需在 `get_game_data()` 里返回同样结构的 `dict`，**路由路径和字段结构保持不变，前端不用改**。
-
----
-
-# 部署到 Zeabur（免费方案）
-
-## 前提：代码里已经有的三样东西
-
-| 必需项 | 状态 | 说明 |
-|---|---|---|
-| `main.py` 末尾的 `if __name__ == "__main__":` 启动块 | ✅ 已有 | Zeabur 对 Python 项目执行 `python main.py`，没有这段会加载完 app 就退出，服务反复重启 |
-| 端口读 `$PORT` 环境变量 | ✅ 已有 | Zeabur 用 `PORT` 决定转发端口，Git 服务默认注入 `8080`；代码里已经 `os.getenv("PORT", "8080")` |
-| `requirements.txt` | ✅ 已有 | Zeabur 构建时自动 `pip install` |
-
-## 一、把代码推到 GitHub
-
-仓库名按你的习惯，比如 `novarise-api`。**仓库根目录就是本项目**（`main.py`、`requirements.txt` 直接在根下）。如果 `main.py` 埋在子目录里，部署时要在服务设置里填 **Root Directory**，否则找不到入口。
-
-```bat
-cd F:\Sundries\leisure\agent\Novarise\2.5-后端API
-git init
-git add main.py requirements.txt README.md
-git commit -m "init: Novarise FastAPI backend"
-git branch -M main
-git remote add origin https://github.com/<你的账号>/novarise-api.git
-git push -u origin main
-```
-
-推送前建议加 `.gitignore`（至少写 `.venv/`、`__pycache__/`），别把虚拟环境推上去。
-
-## 二、注册 Zeabur 并授权 GitHub
-
-1. 打开 <https://zeabur.com/>，点 **Sign in / Get Started**。
-2. 选 **Continue with GitHub**（用 GitHub 账号登录，省掉后面再绑定一次的步骤）。免费版不需要填信用卡。
-3. 首次授权时 GitHub 会弹 **Install Zeabur** 页面，选择 **Only select repositories** 并勾上 `novarise-api`，比授权全部仓库安全。
-
-## 三、创建项目并部署
-
-1. 进入控制台，点 **Create Project**（或 New Project）。
-2. 项目名随便填（如 `novarise`），**Region / 集群** 选离你近的，如 `Hong Kong`、`Singapore`（国内访问延迟低）。
-3. 在项目里点 **Add Service** → 选 **GitHub**。
-4. 从列表里选 `novarise-api` → 点 **Import / Deploy**。
-5. Zeabur 会自动识别语言与框架并开始构建，在 **Logs / Build Logs** 里能看到 Python 依赖安装过程和 `Uvicorn running on http://0.0.0.0:8080`。
-
-> 部署完如果服务一直反复重启，99% 是 `main.py` 缺 `__main__` 启动块，或者端口没读 `$PORT`。
-
-## 四、环境变量（本项目可跳过）
-
-本项目的假数据写在代码里，不需要任何密钥，可以完全不配。
-
-若要配：服务 → **Variables / Configuration** 标签页 → **Add Variable**（多个变量可用 **Edit as Raw** 按 `.env` 格式一次贴入）。Zeabur 会自动注入 `PORT` 等变量，不用手填。
-
-## 五、生成公网域名
-
-1. 服务页展开 **Domains / 域名** 区块。
-2. 点 **Generate Domain（生成域名）**，输入前缀（如 `novarise-api`），得到 `https://novarise-api.zeabur.app`。
-3. 想用自己的域名就选 **Custom Domain**，按提示在 DNS 加 CNAME 记录（Cloudflare 注意 SSL 模式不能选 Full (Strict)）。
-
-## 六、验证部署
-
-```bat
-curl https://novarise-api.zeabur.app/api/hello
-curl "https://novarise-api.zeabur.app/api/get_game_data?game=maimai"
-```
-
-期望：前者返回 `{"msg":"Hello from Cloud API"}`，后者返回完整游戏数据；浏览器打开 `<域名>/docs` 能看到 Swagger 文档。
-
-## 七、前端接上去
-
-改 `merged/index.html` 一行：
-
-```js
-const API_BASE = 'https://novarise-api.zeabur.app';
-```
-
-CORS 已在 `main.py` 放开，前端不用再处理。
-
-## 八、免费版的真实边界（重要）
-
-| 项 | Free Plan（$0） |
-|---|---|
-| 域名 | 一直有效，`*.zeabur.app` 免费生成 |
-| 服务运行 | **空闲一段时间自动休眠，下次请求才唤醒**，首个请求有几秒冷启动 |
-| SLA | 无 |
-| 日志保留 | 48 小时 |
-| 持续在线 | 需要 Dev Plan（$5/月，14 天试用）才会常驻不休眠 |
-
-也就是说：**免费版做不到「24 小时不休眠常驻」**，但域名随时可访问、有人访问就自动醒，对个人项目的前端调数据完全够用。如果真的要求秒级响应、不能冷启动，再考虑升级。
-
+## 🤝 参与贡献
+欢迎提交 Issue 反馈问题，或提交 PR 优化功能与体验。
+如果项目对你有帮助，欢迎点个 Star ⭐ 支持一下。
