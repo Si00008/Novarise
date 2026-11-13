@@ -16,6 +16,7 @@ Novarise 极简后端 —— 纯 FastAPI，不依赖 NoneBot。
 
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any
 
@@ -451,29 +452,63 @@ def build_dancecube_panel(payload: dict[str, Any],
                           user_id: str = "") -> dict[str, Any]:
     """舞立方原始 JSON → 与 build_maimai_panel 完全同构的面板数据。
 
+    真实返回结构（2026-11-13 实测确认）：
+        [{ "MusicID": 23581, "Name": "KISS N TELL", "MusicIndex": 1575,
+           "OwnerType": 1,
+           "ItemRankList": [{ "MusicLev": 14, "MusicLevOld": 2,
+                              "RecordTime": "2026-11-01 15:11:31",
+                              "PlayerScore": 98160, "ComboCount": 366,
+                              "PlayerPercent": 9140, "PlayerMiss": ... }] }]
+    曲名在曲目顶层的 Name；分数 / 连击 / 难度都在 ItemRankList[0] 里，
+    不在曲目顶层（原来那套扁平取值取不到任何真实数据）。
+
     字段结构与 maimai 保持一致：label / player{avatar,name,level,rank,sub}
     stats[{label,value}] / matches[{main,sub}] / highlights[{text,color}] / tip
     color 只允许 blue / green / amber —— 前端标签配色只定义了这三种。
     """
     songs = _dc_song_list(payload)
     if not songs:
-        raise ValueError("返回体里找不到歌曲列表")
+        count = _pick(payload, "classifyCount", "classify_count", default=8)
+        raise ValueError(f"{count} 个分类都没有返回曲目：可能还没打过歌，或凭证无权限")
+
+    def best_rank(song: dict[str, Any]) -> dict[str, Any]:
+        """取 ItemRankList[0]；缺失 / 类型不对一律返回空字典，绝不索引越界。"""
+        raw_rank = _pick(song, "ItemRankList", "itemRankList", "ItemRank", "itemRank")
+        if isinstance(raw_rank, list):
+            for item in raw_rank:
+                if isinstance(item, dict):
+                    return item          # 真实结构里成绩就挂在第一条
+            return {}
+        if isinstance(raw_rank, dict):
+            return raw_rank
+        return {}
 
     def score_of(song: dict[str, Any]) -> float:
-        return _num(_pick(song, "score", "Score", "totalScore", "TotalScore",
-                          "points", "Points", "achievement", "Achievement"), 0.0)
+        rank = best_rank(song)
+        value = _pick(rank, "PlayerScore", "playerScore", "Score", "score")
+        if value is None:
+            value = _pick(song, "score", "Score", "totalScore", "TotalScore",
+                          "points", "Points", "achievement", "Achievement")
+        return _num(value, 0.0)
 
     def combo_of(song: dict[str, Any]) -> int:
-        return int(_num(_pick(song, "maxCombo", "MaxCombo", "maxComboCount",
-                             "MaxComboCount", "combo", "Combo", "combos", "Combos"), 0))
+        rank = best_rank(song)
+        value = _pick(rank, "ComboCount", "comboCount", "MaxCombo", "maxCombo")
+        if value is None:
+            value = _pick(song, "maxCombo", "MaxCombo", "maxComboCount",
+                          "MaxComboCount", "combo", "Combo", "combos", "Combos")
+        return int(_num(value, 0))
 
     def name_of(song: dict[str, Any]) -> str:
-        return str(_pick(song, "musicName", "MusicName", "songName", "SongName",
-                         "name", "Name", "title", "Title") or "未命名曲目")
+        return str(_pick(song, "Name", "name", "MusicName", "musicName",
+                         "songName", "SongName", "title", "Title") or "未命名曲目")
 
     def diff_of(song: dict[str, Any]) -> str:
-        raw_level = _pick(song, "difficulty", "Difficulty", "diff", "Diff",
-                          "musicLevel", "MusicLevel", "level", "Level")
+        rank = best_rank(song)
+        raw_level = _pick(rank, "MusicLev", "musicLev", "MusicLevel", "Level", "level")
+        if raw_level in (None, ""):
+            raw_level = _pick(song, "difficulty", "Difficulty", "diff", "Diff",
+                              "musicLevel", "MusicLevel", "level", "Level")
         return str(raw_level) if raw_level not in (None, "") else "未知难度"
 
     ranked = sorted(songs, key=score_of, reverse=True)
@@ -481,7 +516,7 @@ def build_dancecube_panel(payload: dict[str, Any],
     total = len(songs)
 
     top_score = score_of(ranked[0]) if ranked else 0.0
-    max_combo = max(combo_of(song) for song in songs)
+    max_combo = max((combo_of(song) for song in songs), default=0)
     avg_score = (sum(score_of(song) for song in songs) / total) if total else 0.0
 
     nickname = str(
@@ -489,6 +524,7 @@ def build_dancecube_panel(payload: dict[str, Any],
               "UserName", "name", "Name")
         or (f"玩家 {user_id}" if user_id else "舞立方玩家")
     )
+    classify_count = _pick(payload, "classifyCount", "classify_count", default=8)
 
     matches = [
         {
@@ -505,7 +541,7 @@ def build_dancecube_panel(payload: dict[str, Any],
             "name": nickname,
             "level": f"收录 {total} 首",
             "rank": f"最高分 {top_score:.0f}",
-            "sub": f"musicIndex {DANCECUBE_MUSIC_INDEX}",
+            "sub": f"全部 {classify_count} 个分类",
         },
         "stats": [
             {"label": "曲目数", "value": str(total)},
@@ -524,10 +560,19 @@ def build_dancecube_panel(payload: dict[str, Any],
 
 
 async def fetch_dancecube_data(token: str, user_id: str) -> dict[str, Any]:
-    """异步拉取舞立方 GetMyRankNew 并转成面板结构。
+    """异步拉取舞立方 GetMyRankNew 的 0~7 全部分类，合并后转成面板结构。
 
-    失败一律向上抛 HTTPException，不再吞异常返回假数据 —— 让前端能按状态码
-    区分「凭证失效」和「接口异常」，给出准确提示。
+    2026-11-13 实测结论（四个坑，全部在这个函数里修）：
+      · 鉴权必须是 ``Authorization: Bearer <token>``；裸 token 一律 HTTP 500
+        ``{"Message":"出现错误。"}``（ASP.NET 应用层判格式，不是网关拦截）
+      · 单个 musicIndex 只覆盖一部分曲目：3 / 7 是空数组，2 有 13 KB，
+        4 / 5 / 6 有 34 / 39 / 62 KB，必须 0~7 全拉才完整
+      · 返回体是数组，不是对象
+      · 分数 / 连击 / 难度在 ItemRankList[0] 里（见 build_dancecube_panel）
+
+    并发策略：8 个分类共用一个 AsyncClient 并发拉取，最坏耗时仍是单请求的
+    DANCECUBE_TIMEOUT（不是 8×8 秒）；单个分类异常 / 空返回静默跳过，
+    不影响其余分类。
 
     状态码约定（前端据此分支）：
         401 → 凭证失效 / 过期（固定文案）
@@ -535,84 +580,148 @@ async def fetch_dancecube_data(token: str, user_id: str) -> dict[str, Any]:
         502 → 上游异常：网络错误、非 200、业务失败码、返回体不合法、解析失败
     """
     headers = {
-        "Authorization": token,
+        "Authorization": f"Bearer {token}",     # 必须带 Bearer 前缀
         "Accept": "application/json",
         "User-Agent": "NovaRise/1.3 (+https://modelscope.cn)",
     }
-    params = {"musicIndex": DANCECUBE_MUSIC_INDEX, "userId": user_id}
+    indexes = list(range(8))                    # 0~7 共 8 个分类
+
+    async def fetch_one_index(client: httpx.AsyncClient, index: int) -> dict[str, Any]:
+        """拉一个分类。任何失败都收敛成 {'songs': [], 'error': {...}}，不向上抛。"""
+        try:
+            response = await client.get(
+                DANCECUBE_RANK_URL,
+                headers=headers,
+                params={"musicIndex": index, "userId": user_id},
+            )
+        except httpx.TimeoutException:
+            return {"songs": [], "error": {"kind": "timeout", "status": 504, "detail": ""}}
+        except httpx.HTTPError as exc:
+            return {"songs": [], "error": {"kind": "network", "status": 502,
+                                           "detail": f"{type(exc).__name__}: {exc}"}}
+        except Exception as exc:            # 兜底：绝不冒原始异常
+            return {"songs": [], "error": {"kind": "unknown", "status": 502,
+                                           "detail": f"{type(exc).__name__}: {exc}"}}
+
+        if response.status_code in (401, 403):
+            return {"songs": [], "error": {"kind": "auth", "status": 401, "detail": ""}}
+        if response.status_code != 200:
+            body = (response.text or "")[:200].replace("\n", " ")
+            return {"songs": [], "error": {"kind": "http", "status": 502,
+                                           "detail": f"HTTP {response.status_code}：{body}"}}
+
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            return {"songs": [], "error": {"kind": "json", "status": 502, "detail": str(exc)}}
+
+        # 顶层兼容：接口直接返回数组时包一层，后续统一按对象处理
+        if isinstance(payload, list):
+            payload = {"list": payload}
+        if not isinstance(payload, dict):
+            return {"songs": [], "error": {"kind": "shape", "status": 502,
+                                           "detail": "顶层既不是对象也不是数组"}}
+
+        code = _pick(payload, "code", "Code")
+        if code is not None:
+            try:
+                code_num: int | None = int(float(code))
+            except (TypeError, ValueError):
+                code_num = None
+            if code_num is not None and code_num not in (0, 200):
+                message = str(_pick(payload, "Message", "message", "msg", "Msg") or "")
+                if 401 <= code_num <= 403 or "凭证" in message or "登录" in message \
+                        or "token" in message.lower():
+                    return {"songs": [], "error": {"kind": "auth", "status": 401,
+                                                   "detail": message}}
+                return {"songs": [], "error": {"kind": "business", "status": 502,
+                                               "detail": f"业务失败码 {code}：{message or '无描述'}"}}
+
+        return {"songs": _dc_song_list(payload), "error": None}
 
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(DANCECUBE_TIMEOUT)) as client:
-            response = await client.get(
-                DANCECUBE_RANK_URL, headers=headers, params=params
+            gathered = await asyncio.gather(
+                *[fetch_one_index(client, index) for index in indexes],
+                return_exceptions=True,
             )
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=504,
-            detail=f"请求舞立方超时（{DANCECUBE_TIMEOUT:.0f} 秒未响应），请稍后重试",
-        )
-    except httpx.HTTPError as exc:
+    except Exception as exc:
         raise HTTPException(
             status_code=502,
-            detail=f"请求舞立方失败（网络异常）：{type(exc).__name__}: {exc}",
-        )
-    except Exception as exc:  # 兜底：绝不让原始异常冒到 FastAPI 默认 500 页面
-        raise HTTPException(
-            status_code=502,
-            detail=f"请求舞立方失败（未知异常）：{type(exc).__name__}: {exc}",
+            detail=f"请求舞立方失败（{type(exc).__name__}）：{exc}",
         )
 
-    if response.status_code in (401, 403):
-        # 固定文案：前端按这句 + 401 直接提示解绑重绑
-        raise HTTPException(
-            status_code=401,
-            detail="舞立方凭证失效/过期，请解绑后重新绑定",
-        )
-    if response.status_code != 200:
-        body = response.text[:200].replace("\n", " ")
-        raise HTTPException(
-            status_code=502,
-            detail=f"舞立方接口返回 HTTP {response.status_code}：{body}",
-        )
+    all_songs: list[dict[str, Any]] = []
+    ok_count = 0
+    first_error = None
 
-    try:
-        payload = response.json()
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"舞立方接口返回的不是合法 JSON：{exc}",
-        )
+    for item in gathered:
+        if isinstance(item, Exception):
+            if first_error is None:
+                first_error = {"kind": "unknown", "status": 502,
+                               "detail": f"{type(item).__name__}: {item}"}
+            continue
+        if not isinstance(item, dict):
+            continue
+        if item.get("error"):
+            if first_error is None:
+                first_error = item["error"]
+            continue
+        ok_count += 1
+        all_songs.extend([song for song in (item.get("songs") or []) if isinstance(song, dict)])
 
-    if not isinstance(payload, dict):
-        raise HTTPException(
-            status_code=502,
-            detail="舞立方接口返回结构异常：顶层不是 JSON 对象",
-        )
-
-    # 成功标记：.NET 风格常见 Code=200 / Code=0；没有标记字段时不强求，
-    # 交给 build_dancecube_panel 用「有没有歌曲列表」来判断。
-    code = _pick(payload, "code", "Code")
-    if code is not None:
-        try:
-            code_num: int | None = int(float(code))
-        except (TypeError, ValueError):
-            code_num = None
-        if code_num is not None and code_num not in (0, 200):
-            # 业务失败码：优先判断是不是凭证问题，否则按上游业务异常上报
-            message = str(_pick(payload, "Message", "message", "msg", "Msg") or "")
-            if 401 <= code_num <= 403 or "凭证" in message or "登录" in message \
-                    or "token" in message.lower():
-                raise HTTPException(
-                    status_code=401,
-                    detail="舞立方凭证失效/过期，请解绑后重新绑定",
-                )
+    # 一个分类都没成功：按第一笔错误上报，别把「凭证失效」误报成「解析失败」
+    if ok_count == 0 and first_error:
+        kind = first_error.get("kind")
+        if kind == "auth":
             raise HTTPException(
-                status_code=502,
-                detail=f"舞立方接口返回业务失败码 {code}：{message or '无描述'}",
+                status_code=401,
+                detail="舞立方凭证失效/过期，请解绑后重新绑定",
             )
+        if kind == "timeout":
+            raise HTTPException(
+                status_code=504,
+                detail=f"请求舞立方超时（{DANCECUBE_TIMEOUT:.0f} 秒未响应），请稍后重试",
+            )
+        raise HTTPException(
+            status_code=502,
+            detail=f"请求舞立方失败：{first_error.get('detail') or '未知原因'}",
+        )
+
+    def rank_of(song: dict[str, Any]) -> dict[str, Any]:
+        rank = _pick(song, "ItemRankList", "itemRankList")
+        if isinstance(rank, list):
+            for item in rank:
+                if isinstance(item, dict):
+                    return item
+            return {}
+        return rank if isinstance(rank, dict) else {}
+
+    def song_score(song: dict[str, Any]) -> float:
+        rank = rank_of(song)
+        value = _pick(rank, "PlayerScore", "playerScore", "Score", "score")
+        if value is None:
+            value = _pick(song, "score", "Score", "totalScore", "Points")
+        return _num(value, 0.0)
+
+    # 按 MusicID 去重，同 ID 保留分数更高的一条
+    merged: dict[Any, dict[str, Any]] = {}
+    no_key: list[dict[str, Any]] = []
+    for song in all_songs:
+        key = _pick(song, "MusicID", "MusicId", "musicId", "MusicIndex", "musicIndex", "id", "Id")
+        if key is None or key == "":
+            no_key.append(song)
+            continue
+        old = merged.get(key)
+        if old is None or song_score(song) > song_score(old):
+            merged[key] = song
+
+    merged_songs = list(merged.values()) + no_key
 
     try:
-        return build_dancecube_panel(payload, user_id)
+        return build_dancecube_panel(
+            {"list": merged_songs, "classifyCount": len(indexes)}, user_id
+        )
     except (ValueError, KeyError, TypeError) as exc:
         raise HTTPException(
             status_code=502,
