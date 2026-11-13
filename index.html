@@ -63,6 +63,44 @@
         <code style="font-size:11px;">X-Import-Token</code> 这个自定义请求头（预检被拒），与本地 Token 无关。</div>
     </section>
 
+    <!-- ============================================================
+         【分区 3｜新增】舞立方凭证绑定卡片（dancecube 真实查分）
+         位置：#dfTokenCard 正下方，同级排列；类名全部复用 .df-token-*
+         存储：localStorage['novarise_dc_token'] / ['novarise_dc_userid']
+         后端 FastAPI 不保存任何凭证，请求头透传后即丢弃
+         ============================================================ -->
+    <section class="df-token-card" id="dcTokenCard" style="display:none;">
+      <div class="df-token-head">
+        🔗 绑定舞立方凭证
+        <span style="font-size:11px;font-weight:400;color:var(--text-secondary);">（用于获取真实舞立方成绩）</span>
+      </div>
+      <div class="df-token-desc">
+        数据仅本地存储，后端不保存任何凭证；每次查分由前端通过
+        <code style="font-size:11px;">X-Dancecube-Token</code> /
+        <code style="font-size:11px;">X-Dancecube-UserID</code> 请求头透传，用完即弃。
+        获取方式：登录
+        <a href="https://dancedemo.shenghuayule.com/" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:none;">舞立方</a>
+        后从账号页取 Access-Token 与 UserID。
+      </div>
+
+      <!-- 未绑定状态：两个输入框 + 保存按钮 -->
+      <div class="df-token-row" id="dcTokenUnbound">
+        <input type="password" id="dcTokenInput" class="df-token-input"
+               placeholder="请输入 Access-Token" autocomplete="off" spellcheck="false">
+        <input type="password" id="dcUserIdInput" class="df-token-input"
+               placeholder="请输入 UserID" autocomplete="off" spellcheck="false">
+        <button id="bindDcBtn" type="button" class="btn">保存绑定</button>
+      </div>
+
+      <!-- 已绑定状态：隐藏输入框，只显示状态 + 解绑 -->
+      <div class="df-token-status df-token-hidden" id="dcTokenBound">
+        <span class="df-token-badge" id="dcTokenBoundText">✅ 已绑定舞立方凭证</span>
+        <button id="unbindDcBtn" type="button" class="btn btn-ghost btn-sm">解绑</button>
+      </div>
+
+      <div class="df-token-tip">提示：Access-Token 与 UserID 都是舞立方账号级凭证，请勿提交到公开仓库或截图分享。</div>
+    </section>
+
       <!-- 模块1：玩家信息 -->
       <section class="card" id="mod1-player">
         <div class="card-title">

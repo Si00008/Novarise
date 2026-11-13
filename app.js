@@ -319,6 +319,142 @@
   }
 })();
 
+/*============================================================
+     【分区 3｜新增】舞立方凭证绑定模块（dancecube）
+     职责：Access-Token + UserID 的保存 / 解绑 / 状态渲染。
+     存储 key：novarise_dc_token / novarise_dc_userid
+     范式与水鱼模块完全一致：后端无状态，凭证只在本机浏览器与请求头里存在。
+     跨模块协作：绑定成功后调用 window.__nvRefreshDancecube()（若正停在舞立方面板则立即刷新），
+                 解绑后调用 window.__nvClearDancecube()（清空已加载数据并显示占位）。
+     这两个钩子由下方「分区 4」定义，用户点击时早已就绪。
+     ============================================================ */
+
+(function () {
+  'use strict';
+
+  var DC_TOKEN_KEY = 'novarise_dc_token';
+  var DC_USERID_KEY = 'novarise_dc_userid';
+
+  /* ---------- 读写 ---------- */
+  function readDcToken() {
+    try {
+      return {
+        token: (localStorage.getItem(DC_TOKEN_KEY) || '').trim(),
+        userId: (localStorage.getItem(DC_USERID_KEY) || '').trim()
+      };
+    } catch (e) {
+      return { token: '', userId: '' };
+    }
+  }
+  function saveDcToken(token, userId) {
+    try {
+      localStorage.setItem(DC_TOKEN_KEY, token);
+      localStorage.setItem(DC_USERID_KEY, userId);
+      return true;
+    } catch (e) { return false; }
+  }
+  function clearDcToken() {
+    try {
+      localStorage.removeItem(DC_TOKEN_KEY);
+      localStorage.removeItem(DC_USERID_KEY);
+    } catch (e) { /* 隐私模式可能抛错，忽略 */ }
+  }
+
+  /* ---------- 状态渲染：两项都有 → 已绑态；否则 → 输入框 ---------- */
+  function renderDcTokenUI() {
+    var cred = readDcToken();
+    var isBound = !!cred.token && !!cred.userId;
+    var unbound = document.getElementById('dcTokenUnbound');
+    var bound = document.getElementById('dcTokenBound');
+    var tokenEl = document.getElementById('dcTokenInput');
+    var userIdEl = document.getElementById('dcUserIdInput');
+
+    if (unbound) unbound.classList.toggle('df-token-hidden', isBound);
+    if (bound) bound.classList.toggle('df-token-hidden', !isBound);
+    // 已绑定后不在页面里留明文
+    if (isBound) {
+      if (tokenEl) tokenEl.value = '';
+      if (userIdEl) userIdEl.value = '';
+    }
+  }
+
+  /* ---------- 提示：复用页面原有 showToast ---------- */
+  function dcToast(msg) {
+    if (typeof showToast === 'function') { showToast(msg); return; }
+
+    var t = document.getElementById('dcFallbackToast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'dcFallbackToast';
+      t.style.cssText = 'position:fixed;top:24px;left:50%;transform:translateX(-50%);'
+        + 'background:rgba(0,0,0,0.78);color:#fff;font-size:13px;padding:10px 20px;'
+        + 'border-radius:20px;z-index:3000;white-space:nowrap;max-width:90vw;'
+        + 'overflow:hidden;text-overflow:ellipsis;display:none;';
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.display = 'block';
+    clearTimeout(t._timer);
+    t._timer = setTimeout(function () { t.style.display = 'none'; }, 3000);
+  }
+
+  /* ---------- 保存绑定 ---------- */
+  function bindDcToken() {
+    var tokenEl = document.getElementById('dcTokenInput');
+    var userIdEl = document.getElementById('dcUserIdInput');
+    var token = tokenEl && tokenEl.value ? tokenEl.value.trim() : '';
+    var userId = userIdEl && userIdEl.value ? userIdEl.value.trim() : '';
+
+    if (!token) { dcToast('Access-Token 不能为空'); return; }
+    if (!userId) { dcToast('UserID 不能为空'); return; }
+    if (!saveDcToken(token, userId)) { dcToast('本地存储不可用，请关闭隐私模式后重试'); return; }
+
+    if (tokenEl) tokenEl.value = '';
+    if (userIdEl) userIdEl.value = '';
+    renderDcTokenUI();
+    dcToast('绑定成功');
+
+    // 自动刷新舞立方面板（仅在当前正停留在舞立方面板时生效）
+    if (typeof window.__nvRefreshDancecube === 'function') window.__nvRefreshDancecube();
+  }
+
+  /* ---------- 解绑 ---------- */
+  function unbindDcToken() {
+    clearDcToken();
+    renderDcTokenUI();
+    dcToast('已解绑');
+
+    // 清空面板里已加载的舞立方数据，改显示占位提示
+    if (typeof window.__nvClearDancecube === 'function') window.__nvClearDancecube();
+  }
+
+  /* ---------- 入口 ---------- */
+  function initDcToken() {
+    var bindBtn = document.getElementById('bindDcBtn');
+    var unbindBtn = document.getElementById('unbindDcBtn');
+    var tokenEl = document.getElementById('dcTokenInput');
+    var userIdEl = document.getElementById('dcUserIdInput');
+
+    if (bindBtn) bindBtn.addEventListener('click', bindDcToken);
+    if (unbindBtn) unbindBtn.addEventListener('click', unbindDcToken);
+
+    [tokenEl, userIdEl].forEach(function (el) {
+      if (!el) return;
+      el.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); bindDcToken(); }
+      });
+    });
+
+    renderDcTokenUI();   // 页面初始化时按 localStorage 渲染绑定状态
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDcToken);
+  } else {
+    initDcToken();       // 本脚本在 body 末尾，此时 DOM 已就绪
+  }
+})();
+
 // ============================================================
 // 【分区导航｜JS】本次只做结构与新增，未重排任何原有代码（避免 IIFE 执行时机
 // 与 const 声明时序被破坏）。各分区实际位置如下：
@@ -1796,7 +1932,12 @@ const GD_TAG_COLORS = {
 /* ---------- 【本轮改造】真实后端地址 ----------
    后端 Python 服务通过内网穿透部署，已替代本地的 127.0.0.1:8080。
    以后换隧道域名，只改这一行。 */
-const API_BASE = '';
+const API_BASE = (
+  window.location.hostname === '127.0.0.1' ||
+  window.location.hostname === 'localhost'
+)
+  ?`http://127.0.0.1:8080` 
+  :'';
 
 // 游戏 ID → 显示名（菜单与面板共用；接口没返回 label 时用它兜底）
 const GD_GAME_LABELS = {
@@ -1957,6 +2098,20 @@ async function fetchRealGameData(gameId, timeoutMs) {
     extraHeaders['X-Import-Token'] = token;
   }
 
+  /* ---------- 【新增】dancecube 专用：透传舞立方凭证 ----------
+     后端 dancecube 分支只认 X-Dancecube-Token / X-Dancecube-UserID 两个头，
+     缺任一项后端直接 401，所以这里先本地校验，不发无意义的请求。 */
+  if (gameId === 'dancecube') {
+    const dc = readDcToken();
+    if (!dc.token || !dc.userId) {
+      const noDcErr = new Error('未绑定舞立方凭证，无法获取成绩');
+      noDcErr.code = 'NO_DC_TOKEN';
+      throw noDcErr;
+    }
+    extraHeaders['X-Dancecube-Token'] = dc.token;
+    extraHeaders['X-Dancecube-UserID'] = dc.userId;
+  }
+
   // 手动超时：避免「加载中…」一直转圈
   const controller = new AbortController();
   const timer = setTimeout(function () { controller.abort(); }, limit);
@@ -2012,10 +2167,70 @@ function explainGdError(err) {
            '② 后端有没有配 CORS 中间件（没配的话浏览器会直接拦掉响应）；\n' +
            '③ 页面如果是 https 打开，后端也必须是 https（混合内容会被拦）。';
   }
-  if (/^HTTP 4\d\d/.test(msg)) {
-    return '接口拒绝：' + msg + '\n401/403 查后端鉴权或隧道拦截，404 查 /api/get_game_data 路径拼写。';
-  }
-  if (/^HTTP 5\d\d/.test(msg)) {
+  /* ---------- 【重写】HTTP 4xx / 5xx：从错误消息里拆出状态码与后端 detail ----------
+     fetchRealGameData 抛的格式实际是「HTTP {状态码} {statusText} {后端 detail}」，
+     中间那段是浏览器/服务端给的标准 reason phrase，不属于详情，得先剥掉；
+     剩下可能是纯文本，也可能是 JSON 字符串（再取一次 detail）。
+     ----------------------------------------------------------------------------- */
+  const httpHit = /^HTTP\s+(\d{3})\s*(.*)$/i.exec(msg);
+  if (httpHit) {
+    const statusCode = httpHit[1];
+    let rest = (httpHit[2] || '').trim();
+
+    // ① 剥掉标准 reason phrase（Bad Gateway / Unauthorized / …）
+    const REASON_PHRASES = ['bad request', 'unauthorized', 'payment required', 'forbidden',
+      'not found', 'method not allowed', 'not acceptable', 'request timeout', 'conflict',
+      'payload too large', 'unsupported media type', 'too many requests', 'gone',
+      'internal server error', 'not implemented', 'bad gateway', 'service unavailable',
+      'gateway timeout', 'http version not supported'];
+    const restLower = rest.toLowerCase();
+    for (let i = 0; i < REASON_PHRASES.length; i++) {
+      if (restLower.indexOf(REASON_PHRASES[i]) === 0) {
+        rest = rest.slice(REASON_PHRASES[i].length).trim();
+        break;
+      }
+    }
+
+    // ② 详情是 JSON 字符串就再取一层 detail / Message
+    let detailText = rest;
+    if (rest.charAt(0) === '{') {
+      try {
+        const parsedBody = JSON.parse(rest);
+        if (parsedBody && typeof parsedBody.detail === 'string') detailText = parsedBody.detail;
+        else if (parsedBody && typeof parsedBody.Message === 'string') detailText = parsedBody.Message;
+        else detailText = '';              // 认得是 JSON 但没 detail：交给下面的泛型回退
+      } catch (e) { /* 不是合法 JSON，保留原文 */ }
+    } else {
+      const detailMatch = /"detail"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(rest);
+      if (detailMatch) {
+        detailText = detailMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+      }
+    }
+    detailText = (detailText || '').trim();
+
+    // ③ 凭证类识别：状态码或详情里出现凭证 / 鉴权关键词
+    const scanBlob = (statusCode + ' ' + rest + ' ' + detailText).toLowerCase();
+    const looksCredential = /凭证|token|过期|无效|未授权|401|403|unauthorized|forbidden/.test(scanBlob);
+
+    if (looksCredential) {
+      const nowGame = (typeof gdCurrentGame === 'string') ? gdCurrentGame :
+        (typeof window.gdCurrentGame === 'string' ? window.gdCurrentGame : '');
+      if (nowGame === 'dancecube') {
+        return '❌ 舞立方凭证无效或已过期\n请解绑后重新抓包绑定。';
+      }
+      if (nowGame === 'maimai') {
+        return '❌ 水鱼 Token 无效或已过期\n请解绑后重新获取。';
+      }
+      // 其他游戏没有凭证概念，落到下面的原文处理
+    }
+
+    // ④ 非凭证类：有详情就原样给出；没有就回退到原有泛型提示（语义保持不变）
+    if (detailText) {
+      return 'HTTP ' + statusCode + '：' + detailText;
+    }
+    if (statusCode.charAt(0) === '4') {
+      return '接口拒绝：' + msg + '\n401/403 查后端鉴权或隧道拦截，404 查 /api/get_game_data 路径拼写。';
+    }
     return '后端出错：' + msg + '\n去 Python 端看日志，通常是查询参数或数据源异常。';
   }
   return '加载失败：' + msg;
@@ -2176,6 +2391,31 @@ function readDfToken() {
   try { return (localStorage.getItem(DF_TOKEN_STORAGE_KEY) || '').trim(); } catch (e) { return ''; }
 }
 
+/* ---------- 【新增】舞立方凭证：读取与失效判断 ----------------------------
+   写入口在「分区 3」的舞立方卡片模块，这里负责读取 + 错误归类。
+   key 固定为 novarise_dc_token / novarise_dc_userid（与分区 3 完全一致）。
+   ----------------------------------------------------------------------- */
+const DC_TOKEN_STORAGE_KEY = 'novarise_dc_token';
+const DC_USERID_STORAGE_KEY = 'novarise_dc_userid';
+
+function readDcToken() {
+  try {
+    return {
+      token: (localStorage.getItem(DC_TOKEN_STORAGE_KEY) || '').trim(),
+      userId: (localStorage.getItem(DC_USERID_STORAGE_KEY) || '').trim()
+    };
+  } catch (e) {
+    return { token: '', userId: '' };
+  }
+}
+
+// 判断异常是否属于「舞立方凭证无效 / 过期」：401/403 或 detail 里带无效、过期字样
+function isDcTokenError(err) {
+  const msg = (err && err.message) ? String(err.message) : String(err || '');
+  return /HTTP\s*(401|403)/i.test(msg)
+      || /(token|凭证)[\s\S]{0,16}(无效|过期|有误|invalid|expired)/i.test(msg);
+}
+
 // 面板当前显示的游戏；返回生活面板时置空（供分区 3 的绑定/解绑钩子判断）
 let gdCurrentGame = null;
 
@@ -2187,15 +2427,15 @@ function isDfTokenError(err) {
 }
 
 // 未绑定 / Token 失效：把舞萌面板整块替换成占位提示
-function renderGdTokenMissing(gameId, reason) {
+function renderGdTokenMissing(gameId, reason, bindHint, tagText) {
   const label = GD_GAME_LABELS[gameId] || gameId;
   const hint = reason || '未绑定Token，无法获取成绩';
   const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
 
   setText('gdGameName', label + ' · 玩家信息');
-  setText('gdPlayerTag', '未绑定 Token');
+  setText('gdPlayerTag', tagText || '未绑定 Token');
   setText('gdPlayerName', hint);
-  setText('gdPlayerSub', '请在上方「🔗 绑定水鱼查分器 Token」处填入你的 Import-Token');
+  setText('gdPlayerSub', bindHint || '请在上方「🔗 绑定水鱼查分器 Token」处填入你的 Import-Token');
   setText('gdPlayerLevel', '等级 —');
   setText('gdPlayerRank', '段位 —');
   const avatarEl = document.getElementById('gdAvatar');
@@ -2246,6 +2486,20 @@ window.__nvClearMaimai = function () {
   }
 };
 
+// 【新增】舞立方版本，与水鱼钩子一一对应
+window.__nvRefreshDancecube = function () {
+  // 只有当前正停留在舞立方面板才需要立刻重拉，否则下次点舞立方时自然带上新凭证
+  if (gdCurrentGame === 'dancecube') showGameDashboard('dancecube');
+};
+window.__nvClearDancecube = function () {
+  const gd = document.getElementById('gameDashboard');
+  const visible = gd && gd.getAttribute('style') && /display:\s*grid/.test(gd.getAttribute('style'));
+  if (visible && gdCurrentGame === 'dancecube') {
+    renderGdTokenMissing('dancecube', '未绑定舞立方凭证',
+      '请在上方「🔗 绑定舞立方凭证」处填入 Access-Token 与 UserID', '凭证未绑定');
+  }
+};
+
 // 显示游戏面板：先切到面板并铺「加载中...」，再请求真实数据；失败就把错误落在面板里
 async function showGameDashboard(gameId) {
   const gd = document.getElementById('gameDashboard');
@@ -2261,6 +2515,9 @@ async function showGameDashboard(gameId) {
   // 【新增】Token 绑定卡片只服务舞萌：舞萌显示，其余游戏一律隐藏
   const dfCard = document.getElementById('dfTokenCard');
   if (dfCard) dfCard.style.display = (gameId === 'maimai') ? '' : 'none';
+  // 【新增】舞立方凭证卡片：舞立方显示，其余游戏一律隐藏
+  const dcCard = document.getElementById('dcTokenCard');
+  if (dcCard) dcCard.style.display = (gameId === 'dancecube') ? '' : 'none';
   // 隐藏生活卡片；面板内部的 4 张卡（mod1~mod4）必须排除，否则会连面板一起隐藏
   document.querySelectorAll('.card').forEach(card => {
     if (gd.contains(card)) return;
@@ -2285,6 +2542,23 @@ async function showGameDashboard(gameId) {
     if (err && err.code === 'NO_DF_TOKEN') {
       renderGdTokenMissing(gameId);
       showToast('请先在上方绑定水鱼 Token');
+      return;
+    }
+
+    /* 【新增】未绑定舞立方凭证：请求压根没发出去，面板占位 + Toast 引导绑定 */
+    if (err && err.code === 'NO_DC_TOKEN') {
+      renderGdTokenMissing(gameId, '未绑定舞立方凭证',
+        '请在上方「🔗 绑定舞立方凭证」处填入 Access-Token 与 UserID', '凭证未绑定');
+      showToast('请先绑定舞立方凭证');
+      return;
+    }
+
+    /* 【新增】舞立方凭证无效 / 过期：面板占位 + Toast 引导解绑重绑 */
+    if (gameId === 'dancecube' && isDcTokenError(err)) {
+      renderGdTokenMissing(gameId, '凭证无效或已过期',
+        '请解绑后重新绑定舞立方凭证', '凭证已失效');
+      showToast('凭证无效或已过期，请解绑后重新绑定');
+      console.warn('[gameDashboard] 舞立方凭证失效：', gameId, err);
       return;
     }
 
