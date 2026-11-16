@@ -87,26 +87,11 @@
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }
 
-  function sendMessage() {
-    var value = chatInput && chatInput.value ? chatInput.value.trim() : '';
-    if (!value) return;
-    appendMessage(value, 'user');
-    chatInput.value = '';
-    // 本地占位回复：接入后端 AI 接口后，把这里替换为真实请求即可
-    setTimeout(function () {
-      appendMessage('（AI 服务尚未接入，接入后端接口后此处会返回真实回答）', 'ai');
-    }, 300);
-  }
-
   if (chatBtn) chatBtn.addEventListener('click', function () {
     if (!chatPanel) return;
     if (chatPanel.style.display === 'flex') closeChat(); else openChat();
   });
   if (closeChatBtn) closeChatBtn.addEventListener('click', closeChat);
-  if (chatSend) chatSend.addEventListener('click', sendMessage);
-  if (chatInput) chatInput.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-  });
 })();
 
 // ========== 【分区 5】原有脚本块②（未重排、未改逻辑） ==========
@@ -459,7 +444,7 @@
 // 【分区导航｜JS】本次只做结构与新增，未重排任何原有代码（避免 IIFE 执行时机
 // 与 const 声明时序被破坏）。各分区实际位置如下：
 //   分区 1 全局工具函数   → 搜 "// ---------- 工具 ----------"
-//   分区 2 全局状态与常量 → 搜 STORAGE_KEY / DATA_VERSION / API_BASE / mockGameData
+//   分区 2 全局状态与常量 → 搜 STORAGE_KEY / DATA_VERSION / API_BASE
 //   分区 3 Token 绑定模块 → 上方独立的脚本块（新增）
 //   分区 4 游戏面板业务   → 搜 "// 亮点标签的三种配色"
 //   分区 5 原有业务模块   → 待办 / 习惯 / 心情 / 打卡 / 便签 / 旅程 / AI
@@ -1916,7 +1901,6 @@ function resetData() {
 
 /* ============================================
    【新增 A】多游戏数据面板
-   - mockGameData：假数据（连真实接口前，先用它跑通交互）
    - renderGameDashboard(gameId)：把数据填进 mod1~mod4
    - showGameDashboard / backToLifePanel：面板与生活卡片互斥切换
    ============================================ */
@@ -1929,11 +1913,11 @@ const GD_TAG_COLORS = {
   amber: 'background:rgba(255,179,71,0.18);color:#9a6b1f;',
 };
 
-/* ---------- 【本轮改造】真实后端地址 ----------
-   后端 Python 服务通过内网穿透部署，已替代本地的 127.0.0.1:8080。
-   以后换隧道域名，只改这一行。
-   因Netlify额度用尽，API写死成魔搭的线上地址 */
-const API_BASE = 'https://si00008-novarise-api.ms.show';
+// 智能判断环境：本地运行走 8080，线上走魔搭网关
+// 末尾不带 /、不带 /api，保持与 API_BASE + '/api/get_game_data?game=…' 的拼接规范
+const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' || window.location.protocol === 'file:')
+  ? 'http://127.0.0.1:8080'
+  : 'https://si00008-novarise-api.ms.show';
 
 // 游戏 ID → 显示名（菜单与面板共用；接口没返回 label 时用它兜底）
 const GD_GAME_LABELS = {
@@ -1947,133 +1931,13 @@ const GD_GAME_LABELS = {
 // 请求序号：连点不同游戏时只认最后一次点击的结果，避免先发的慢响应覆盖后发的新数据
 let gdRequestSeq = 0;
 
-// 假数据：菜单里 5 个游戏都配了数据，避免点「王者荣耀 / 舞立方」时空白。
-// 现在真实数据走接口，这份 mock 只作为离线演示 / 接口字段结构参考保留。
-const mockGameData = {
-  maimai: {
-    label: '舞萌 DX',
-    player: { avatar: '🎵', name: 'MaimaiPlayer', level: 'Lv.168', rank: 'rating 13.86', sub: '标准谱 · 稳定型玩家' },
-    stats: [
-      { label: '总场次', value: '1204' },
-      { label: '最高评级', value: 'SSS' },
-      { label: '最高连击', value: '1423' },
-      { label: '平均 rating', value: '13.86' },
-    ],
-    matches: [
-      { main: '✅ SSS · Glorious Crown', sub: '达成率 100.6%' },
-      { main: '✅ SS · BAD∞∞∞', sub: '达成率 99.2%' },
-      { main: '❌ A · QZKago Requiem', sub: '达成率 94.8%' },
-      { main: '✅ SSS · 系ぎて', sub: '达成率 101.3%' },
-      { main: '✅ S · 麒麟', sub: '达成率 97.5%' },
-    ],
-    highlights: [
-      { text: '🎵 1423 连击（个人最高）', color: 'blue' },
-      { text: '🏆 全曲 SSS 38 首', color: 'green' },
-      { text: '📈 rating 月增长 +0.42', color: 'amber' },
-    ],
-    tip: '音游指标看评级 / 达成率 / 连击；接入 maimai DX NET 后这里换成真实成绩。',
-  },
-  dancecube: {
-    label: '舞立方',
-    player: { avatar: '🕺', name: 'CubePlayer', level: 'Lv.52', rank: 'S+', sub: '8K 模式 · 稳定型玩家' },
-    stats: [
-      { label: '总场次', value: '508' },
-      { label: '最高评级', value: 'S+' },
-      { label: '最高连击', value: '897' },
-      { label: '平均准确率', value: '96.4%' },
-    ],
-    matches: [
-      { main: '✅ S+ · Neon Drive', sub: '准确率 98.2%' },
-      { main: '✅ S · Pulse', sub: '准确率 97.1%' },
-      { main: '✅ S · Overdrive', sub: '准确率 96.8%' },
-      { main: '❌ A+ · 极夜', sub: '准确率 93.5%' },
-      { main: '✅ S+ · 起风了', sub: '准确率 98.6%' },
-    ],
-    highlights: [
-      { text: '🕺 897 连击（个人最高）', color: 'blue' },
-      { text: '🏆 8K 难度全曲 S 以上', color: 'green' },
-      { text: '📈 准确率月均 +1.2%', color: 'amber' },
-    ],
-    tip: '舞立方指标看评级 / 准确率 / 连击；接入机台成绩后这里换成真实数据。',
-  },
-  lol: {
-    label: 'LOL',
-    player: { avatar: '🏆', name: 'Summer#示例', level: 'Lv.168', rank: '钻石 I', sub: '峡谷之巅 · 主玩中单' },
-    stats: [
-      { label: '总场次', value: '428' },
-      { label: '胜率', value: '56.3%' },
-      { label: '最高连胜', value: '9 连胜' },
-      { label: '场均 KDA', value: '4.2' },
-    ],
-    matches: [
-      { main: '✅ 胜利 · 中单阿狸', sub: '13/2/9 · 32 分钟' },
-      { main: '❌ 失败 · 打野佛耶戈', sub: '5/8/6 · 28 分钟' },
-      { main: '✅ 胜利 · 中单辛德拉', sub: '9/3/12 · 35 分钟' },
-      { main: '✅ 胜利 · AD 崔丝塔娜', sub: '11/1/8 · 24 分钟' },
-      { main: '❌ 失败 · 辅助洛', sub: '2/7/14 · 39 分钟' },
-    ],
-    highlights: [
-      { text: '⚡ 单月最高连胜 9 场', color: 'blue' },
-      { text: '🎯 阿狸胜率 68%', color: 'green' },
-      { text: '🏅 峡谷之巅 钻石 I', color: 'amber' },
-    ],
-    tip: '近 30 天胜率高于同段位平均，中单英雄池稳定；接入 Riot API 后换成真实对局。',
-  },
-  hok: {
-    label: '王者荣耀',
-    player: { avatar: '👑', name: '召唤师示例', level: 'Lv.30', rank: '王者 32 星', sub: '主玩射手 · 五杀 3 次' },
-    stats: [
-      { label: '总场次', value: '966' },
-      { label: '胜率', value: '61.2%' },
-      { label: '最高段位', value: '王者 32 星' },
-      { label: 'MVP 率', value: '34.5%' },
-    ],
-    matches: [
-      { main: '✅ 胜利 · 后羿 12/3/8', sub: 'MVP · 18 分钟' },
-      { main: '✅ 胜利 · 伽罗 9/2/11', sub: 'MVP · 21 分钟' },
-      { main: '❌ 失败 · 孙尚香 6/7/4', sub: '24 分钟' },
-      { main: '✅ 胜利 · 狄仁杰 10/1/9', sub: 'MVP · 16 分钟' },
-      { main: '❌ 失败 · 鲁班七号 4/9/6', sub: '27 分钟' },
-    ],
-    highlights: [
-      { text: '👑 赛季最高 王者 32 星', color: 'blue' },
-      { text: '🎯 后羿胜率 66%', color: 'green' },
-      { text: '🏅 MVP 率 34.5%', color: 'amber' },
-    ],
-    tip: '王者指标看胜率 / MVP 率 / 段位峰值；接入营地数据后换成真实战绩。',
-  },
-  valorant: {
-    label: '瓦罗兰特',
-    player: { avatar: '🔫', name: 'Ace#示例', level: 'Lv.76', rank: '不朽 I', sub: '主玩捷风 · 突破位' },
-    stats: [
-      { label: '总场次', value: '312' },
-      { label: '胜率', value: '58.4%' },
-      { label: '场均 ACS', value: '241' },
-      { label: '爆头率', value: '27.6%' },
-    ],
-    matches: [
-      { main: '✅ 胜利 · 捷风 26/12', sub: '亚海悬城 · 13:9' },
-      { main: '✅ 胜利 · 蕾娜 22/10', sub: '源工重镇 · 13:7' },
-      { main: '❌ 失败 · 捷风 18/19', sub: '隐世修所 · 11:13' },
-      { main: '✅ 胜利 · 菲德 15/11', sub: '森寒冬港 · 13:10' },
-      { main: '❌ 失败 · 霓虹 20/17', sub: '裂变峡谷 · 12:14' },
-    ],
-    highlights: [
-      { text: '🎯 单场最高 ACS 318', color: 'blue' },
-      { text: '💥 四杀 6 次', color: 'green' },
-      { text: '🏅 不朽 I（本赛季）', color: 'amber' },
-    ],
-    tip: 'FPS 指标看 ACS / 爆头率 / 胜率；接入 Riot API 后换成真实对局。',
-  },
-};
-
 /* ---------- 【本轮改造】真实接口请求 ---------- */
 
 /**
  * 拉取某个游戏的真实数据
  * @param {string} gameId maimai / dancecube / lol / hok / valorant
  * @param {number} timeoutMs 超时毫秒数（隧道链路慢，给足 12 秒）
- * @returns {Promise<object>} 结构与 mockGameData 一致：{label, player, stats, matches, highlights, tip}
+ * @returns {Promise<object>} 结构：{label, player, stats, matches, highlights, tip}
  */
 async function fetchRealGameData(gameId, timeoutMs) {
   const url = API_BASE + '/api/get_game_data?game=' + encodeURIComponent(gameId);
@@ -2122,14 +1986,13 @@ async function fetchRealGameData(gameId, timeoutMs) {
 
     if (!res.ok) {
       // 4xx 多为鉴权/路径问题，5xx 是后端报错，原样带出来方便定位。
-      // 【新增】仅 maimai：把后端返回的 detail 拼进错误信息，Token 失效提示就在里面。
+      // 【改】所有游戏都读后端 detail（原来只有 maimai 读）：后端已删假数据，
+      //   501「该游戏暂未接入真实数据源」、舞立方 502 上游原文都要原样进面板。
       let detail = '';
-      if (gameId === 'maimai') {
-        try {
-          const errBody = await res.json();
-          if (errBody && errBody.detail) detail = ' ' + String(errBody.detail);
-        } catch (e) { /* 响应不是 JSON 就保持原样 */ }
-      }
+      try {
+        const errBody = await res.json();
+        if (errBody && errBody.detail) detail = ' ' + String(errBody.detail);
+      } catch (e) { /* 响应不是 JSON 就保持原样 */ }
       throw new Error('HTTP ' + res.status + ' ' + (res.statusText || '') + detail);
     }
 
@@ -2312,12 +2175,14 @@ function renderGdError(gameId, err) {
 }
 
 // 把数据填进 mod1~mod4（标题、玩家信息、四项核心数据、5 场战绩、3 个亮点）
-// data 为接口返回的游戏对象；不传时回落到 mockGameData（仅离线演示用）
+// data 为接口返回的游戏对象；不做任何本地兜底，数据为空/非法时直接抛给上层 catch
 function renderGameDashboard(gameId, data) {
   const gd = document.getElementById('gameDashboard');
   if (!gd) return false;
-  const d = data || mockGameData[gameId];
-  if (!d) { showToast('「' + gameId + '」的数据还没接入'); return false; }
+  const d = data;
+  if (!d || typeof d !== 'object' || Array.isArray(d)) {
+    throw new Error('接口返回数据为空或格式非法（game=' + gameId + '）');
+  }
 
   // 接口字段缺一半时也不要把页面弄崩：缺什么用什么兜底
   const player = d.player || {};
