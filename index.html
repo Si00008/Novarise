@@ -59,8 +59,8 @@
       </div>
 
       <div class="df-token-tip">提示：Import-Token 是水鱼账号级凭证，请勿提交到公开仓库或截图分享。<br>
-        若绑定后查分一直提示「网络请求失败 / Failed to fetch」，多为部署平台网关未放行
-        <code style="font-size:11px;">X-Import-Token</code> 这个自定义请求头（预检被拒），与本地 Token 无关。</div>
+        若绑定后查分一直提示「网络请求失败 / Failed to fetch」，多为后端服务不可达，或部署平台
+        网关未放行 <code style="font-size:11px;">Authorization</code> 这个请求头（预检被拒），与本地 Token 无关。</div>
     </section>
 
     <!-- ============================================================
@@ -76,8 +76,8 @@
       </div>
       <div class="df-token-desc">
         数据仅本地存储，后端不保存任何凭证；每次查分由前端通过
-        <code style="font-size:11px;">X-Dancecube-Token</code> /
-        <code style="font-size:11px;">X-Dancecube-UserID</code> 请求头透传，用完即弃。
+        <code style="font-size:11px;">Authorization</code> 请求头 +
+        <code style="font-size:11px;">userId</code> 查询参数透传，用完即弃。
         获取方式：登录
         <a href="https://dancedemo.shenghuayule.com/" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:none;">舞立方</a>
         后从账号页取 Access-Token 与 UserID。

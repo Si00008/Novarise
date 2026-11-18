@@ -40,12 +40,12 @@ let gdRequestSeq = 0;
  * @returns {Promise<object>} 结构：{label, player, stats, matches, highlights, tip}
  */
 async function fetchRealGameData(gameId, timeoutMs) {
-  const url = API_BASE + '/api/get_game_data?game=' + encodeURIComponent(gameId);
+  let url = API_BASE + '/api/get_game_data?game=' + encodeURIComponent(gameId);
   const limit = timeoutMs || 12000;
 
-  /* ---------- 【新增】maimai 专用：透传水鱼 Token ----------
-     后端 FastAPI 无状态，只认请求头 X-Import-Token。
-     其他游戏（dancecube / lol / hok / valorant）走下面的原逻辑，一行未改。 */
+  /* ---------- maimai 专用：透传水鱼 Token ----------
+     后端 FastAPI 无状态，只认 Authorization: Bearer 头（魔搭网关只放行这个头）。
+     其他游戏（dancecube / lol / hok / valorant）走下面的原逻辑。 */
   const extraHeaders = {};
   if (gameId === 'maimai') {
     const token = readDfToken();
@@ -55,11 +55,13 @@ async function fetchRealGameData(gameId, timeoutMs) {
       noTokenErr.code = 'NO_DF_TOKEN';
       throw noTokenErr;
     }
-    extraHeaders['X-Import-Token'] = token;
+    // 【改造】凭证改走 Authorization 头：魔搭网关的 CORS 白名单只放行 Authorization，
+    //   不含 X-Import-Token，自定义头会在 OPTIONS 预检阶段被浏览器拦掉（线上 Failed to fetch）。
+    extraHeaders['Authorization'] = 'Bearer ' + token;
   }
 
-  /* ---------- 【新增】dancecube 专用：透传舞立方凭证 ----------
-     后端 dancecube 分支只认 X-Dancecube-Token / X-Dancecube-UserID 两个头，
+  /* ---------- dancecube 专用：透传舞立方凭证 ----------
+     后端 dancecube 分支认 Authorization: Bearer + ?userId= 两项，
      缺任一项后端直接 401，所以这里先本地校验，不发无意义的请求。 */
   if (gameId === 'dancecube') {
     const dc = readDcToken();
@@ -68,8 +70,10 @@ async function fetchRealGameData(gameId, timeoutMs) {
       noDcErr.code = 'NO_DC_TOKEN';
       throw noDcErr;
     }
-    extraHeaders['X-Dancecube-Token'] = dc.token;
-    extraHeaders['X-Dancecube-UserID'] = dc.userId;
+    // 【改造】token 走 Authorization（网关白名单内），userId 走 query 参数（普通参数，
+    //   不触发自定义头预检），避免 X-Dancecube-* 被网关拦掉。
+    extraHeaders['Authorization'] = 'Bearer ' + dc.token;
+    url += '&userId=' + encodeURIComponent(dc.userId);
   }
 
   // 手动超时：避免「加载中…」一直转圈
