@@ -17,7 +17,7 @@ const GD_TAG_COLORS = {
 // 末尾不带 /、不带 /api，保持与 API_BASE + '/api/get_game_data?game=…' 的拼接规范
 const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' || window.location.protocol === 'file:')
   ? 'http://127.0.0.1:8080'
-  : 'https://si00008-novarise-api.ms.show';
+  : 'https://novarise-api-proxy.2446473196.workers.dev/';
 
 // 游戏 ID → 显示名（菜单与面板共用；接口没返回 label 时用它兜底）
 const GD_GAME_LABELS = {
