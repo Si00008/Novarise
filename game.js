@@ -36,15 +36,15 @@ let gdRequestSeq = 0;
 /**
  * 拉取某个游戏的真实数据
  * @param {string} gameId maimai / dancecube / lol / hok / valorant
- * @param {number} timeoutMs 超时毫秒数（隧道链路慢，给足 12 秒）
+ * @param {number} timeoutMs 超时毫秒数（魔搭冷启动慢，给足 45 秒）
  * @returns {Promise<object>} 结构：{label, player, stats, matches, highlights, tip}
  */
 async function fetchRealGameData(gameId, timeoutMs) {
   let url = API_BASE + '/api/get_game_data?game=' + encodeURIComponent(gameId);
-  const limit = timeoutMs || 12000;
+  const limit = timeoutMs || 45000;
 
   /* ---------- maimai 专用：透传水鱼 Token ----------
-     后端 FastAPI 无状态，只认 Authorization: Bearer 头（魔搭网关只放行这个头）。
+     后端 FastAPI 无状态，读取 X-Mx-ReqToken 头（Authorization 会被魔搭网关拦截）。
      其他游戏（dancecube / lol / hok / valorant）走下面的原逻辑。 */
   const extraHeaders = {};
   if (gameId === 'maimai') {
@@ -55,9 +55,9 @@ async function fetchRealGameData(gameId, timeoutMs) {
       noTokenErr.code = 'NO_DF_TOKEN';
       throw noTokenErr;
     }
-    // 【改造】凭证改走 Authorization 头：魔搭网关的 CORS 白名单只放行 Authorization，
-    //   不含 X-Import-Token，自定义头会在 OPTIONS 预检阶段被浏览器拦掉（线上 Failed to fetch）。
-    extraHeaders['Authorization'] = 'Bearer ' + token;
+    // 凭证走 X-Mx-ReqToken：魔搭网关会拦截任何带 Authorization 的请求（直接 403），
+    //   而 X-Mx-ReqToken 在其允许头名单内，可正常穿透。
+    extraHeaders['X-Mx-ReqToken'] = token;
   }
 
   /* ---------- dancecube 专用：透传舞立方凭证 ----------
@@ -70,9 +70,8 @@ async function fetchRealGameData(gameId, timeoutMs) {
       noDcErr.code = 'NO_DC_TOKEN';
       throw noDcErr;
     }
-    // 【改造】token 走 Authorization（网关白名单内），userId 走 query 参数（普通参数，
-    //   不触发自定义头预检），避免 X-Dancecube-* 被网关拦掉。
-    extraHeaders['Authorization'] = 'Bearer ' + dc.token;
+    // token 走 X-Mx-ReqToken（Authorization 会被魔搭网关 403），userId 走 query 参数。
+    extraHeaders['X-Mx-ReqToken'] = dc.token;
     url += '&userId=' + encodeURIComponent(dc.userId);
   }
 
@@ -122,7 +121,7 @@ function explainGdError(err) {
   const msg = (err && err.message) ? err.message : String(err);
 
   if (err && err.name === 'AbortError') {
-    return '请求超时（12 秒内没返回）。\n检查隧道是否还活着：浏览器直接打开 ' + API_BASE + '/docs 看看。';
+    return '请求超时（45 秒内没返回）。\n检查隧道是否还活着：浏览器直接打开 ' + API_BASE + '/docs 看看。';
   }
   if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) {
     return '请求被中断（Failed to fetch）。按这个顺序查：\n' +
