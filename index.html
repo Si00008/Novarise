@@ -6,6 +6,7 @@
 <title>冉星 Novarise</title>
 <meta name="description" content="冉星 Novarise - 每天打开一次的生活仪表盘">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="lol-panel.css">
 </head>
 <body>
 <div class="container">
@@ -33,6 +34,37 @@
          位置：游戏面板 #gameDashboard 内部顶部、玩家信息卡片之前（同样 grid-column:1/-1）
          存储：localStorage['novarise_df_token']，后端 FastAPI 不存储任何 Token
          ============================================================ -->
+    <!-- ============================================================
+         【LOL / LOLM 专属】左上角切换条 + 活动入口条
+         仅 game=lol / game=lolm 时由 game.js 显示，其余游戏保持隐藏
+         切换器：端游切服务器大区 / 手游切 QQ·微信登录
+         ============================================================ -->
+    <div id="lolTopBar" class="lol-top-bar" style="display:none;">
+      <div class="lol-top-left">
+        <span class="lol-avatar" id="lolAvatar">L</span>
+        <button type="button" class="lol-chip" id="lolSwitchBtn" aria-expanded="false">
+          <span id="lolSwitchLabel">艾欧尼亚</span>
+          <span class="lol-caret">▾</span>
+        </button>
+      </div>
+      <div class="lol-top-right">
+        <button type="button" class="lol-chip" id="lolMyDataBtn">📊 我的数据</button>
+        <button type="button" class="lol-chip" id="lolProBtn">🔍 职业选手</button>
+      </div>
+    </div>
+
+    <!-- 切换菜单：端游=服务器大区 / 手游=QQ·微信，选项由 game.js 填充 -->
+    <div id="lolSwitchMenu" class="lol-menu" style="display:none;"></div>
+
+    <!-- 活动入口条：细条、整条可点，不是大按钮 -->
+    <a id="lolActLink" class="lol-act-bar" style="display:none;" target="_blank" rel="noopener noreferrer">
+      <span class="lol-act-left">
+        <span class="lol-act-badge">官方活动</span>
+        <span class="lol-act-text">2026 全球总决赛冠军 · BLG 夺冠庆典</span>
+      </span>
+      <span class="lol-act-arrow">查看 →</span>
+    </a>
+
     <section class="df-token-card" id="dfTokenCard">
       <div class="df-token-head">
         🔗 绑定水鱼查分器 Token
@@ -198,7 +230,10 @@
         </span>
       </div>
       <div class="todo-search-row">
-        <input type="text" id="todoSearch" placeholder="🔍 搜索待办..." maxlength="30">
+        <div class="cs-row">
+          <input type="text" id="todoSearch" placeholder="🔍 搜索待办..." maxlength="30">
+          <button class="btn btn-ghost btn-sm" id="todoCatManageBtn" type="button">⚙️ 管理分类</button>
+        </div>
       </div>
       <div class="todo-input-row">
         <input type="text" id="todoInput" placeholder="添加新待办..." maxlength="50" enterkeyhint="done">
@@ -229,7 +264,7 @@
            上面一条虚线隔开，配「📝 快捷便签」提示；原来的 card-note 整块已删除 -->
       <div id="todoNoteDivider" style="border-top:1px dashed var(--border,#e3e6ea);margin:14px 0 10px;"></div>
       <div id="todoNoteLabel" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;font-size:12px;color:var(--text-secondary,#777);">
-        <span>📝 快捷便签</span>
+        <span>📝 快捷便签 <span id="noteDateLabel">· 今天</span></span>
       </div>
       <textarea class="note-area" id="noteArea" placeholder="随手记点什么，自动保存..." maxlength="500" style="min-height:88px;"></textarea>
       <div class="note-saved" id="noteSaved">已自动保存</div>
@@ -268,6 +303,11 @@
         </span>
       </div>
       <div class="card-body">
+        <div class="cat-filter-bar" id="checkinCatFilter">
+          <span class="cat-chip active" data-cat="全部">全部</span>
+          <button class="btn btn-ghost btn-sm cat-manage-btn" id="habitCatManageBtn" type="button">⚙️ 管理</button>
+        </div>
+        <div class="checkin-date-tip" id="checkinDateTip" style="display:none;">正在查看 <span id="checkinDateLabel"></span> 的打卡记录（历史只读）<button class="btn btn-ghost btn-sm" id="checkinBackTodayBtn" type="button" style="margin-left:8px;">回到今天</button></div>
         <div id="checkinContainer"></div>
         <button class="btn" id="openHabitFormBtn" style="width:100%; margin-top:10px;">＋ 新建习惯</button>
       </div>
@@ -300,10 +340,17 @@
       <div class="quote-text" id="quoteText">点击下方按钮，获取今日能量</div>
       <div class="quote-actions">
         <button class="btn" id="newQuoteBtn">换一句</button>
-        <button class="btn btn-ghost" id="favoriteQuoteBtn">⭐ 收藏</button>
+      </div>
+      <!-- 【新增】操作栏：搜索（左）· 自定义输入 · 收藏（右）
+           收藏按钮从上一行移到这里，原「换一句」位置保持不变 -->
+      <div class="quote-input-row">
+        <button class="btn btn-ghost btn-sm quote-search-btn" id="quoteSearchBtn" type="button" title="搜索我的句子库">🔍</button>
+        <input type="text" id="quoteCustomInput" placeholder="输入自定义句子，或点击左侧搜索名言" maxlength="80" autocomplete="off">
+        <button class="btn btn-ghost btn-sm" id="favoriteQuoteBtn" type="button">⭐ 收藏</button>
       </div>
       <div class="favorites-list" id="favoritesList" style="display:none;">
         <div class="favorites-title">我的收藏</div>
+        <div class="cat-filter-bar" id="favFilterBar"></div>
         <div id="favoritesItems"></div>
       </div>
     </section>
@@ -336,20 +383,12 @@
     </div>
   </div>
 
-  <!-- 一级分类：MOBA -->
+  <!-- 一级分类：MOBA · 多人在线战术竞技（端游 + 手游两项，接口接入位预留） -->
   <div class="rp-group">
-    <div class="rp-group-head" data-label="⚔️ MOBA" style="display:flex;align-items:center;padding:7px 8px;border-radius:9px;cursor:pointer;font-size:13px;font-weight:600;color:var(--text,#222);user-select:none;">▾ ⚔️ MOBA</div>
-    <div class="rp-group-body" style="display:none;">
-      <div class="rp-game" data-game="lol" style="display:flex;align-items:center;gap:6px;padding:7px 8px;margin:4px 0 0 10px;border-radius:9px;cursor:pointer;font-size:13px;color:var(--text,#222);background:transparent;">🏆 LOL</div>
-      <div class="rp-game" data-game="hok" style="display:flex;align-items:center;gap:6px;padding:7px 8px;margin:4px 0 0 10px;border-radius:9px;cursor:pointer;font-size:13px;color:var(--text,#222);background:transparent;">👑 王者荣耀</div>
-    </div>
-  </div>
-
-  <!-- 一级分类：FPS -->
-  <div class="rp-group">
-    <div class="rp-group-head" data-label="🎯 FPS" style="display:flex;align-items:center;padding:7px 8px;border-radius:9px;cursor:pointer;font-size:13px;font-weight:600;color:var(--text,#222);user-select:none;">▾ 🎯 FPS</div>
-    <div class="rp-group-body" style="display:none;">
-      <div class="rp-game" data-game="valorant" style="display:flex;align-items:center;gap:6px;padding:7px 8px;margin:4px 0 0 10px;border-radius:9px;cursor:pointer;font-size:13px;color:var(--text,#222);background:transparent;">🔫 瓦罗兰特</div>
+    <div class="rp-group-head" data-label="⚔️ MOBA · 多人在线战术竞技" style="display:flex;align-items:center;padding:7px 8px;border-radius:9px;cursor:pointer;font-size:13px;font-weight:600;color:var(--text,#222);user-select:none;">▾ ⚔️ MOBA · 多人在线战术竞技</div>
+    <div class="rp-group-body" style="display:block;">
+      <div class="rp-game" data-game="lol" style="display:flex;align-items:center;gap:6px;padding:7px 8px;margin:4px 0 0 10px;border-radius:9px;cursor:pointer;font-size:13px;color:var(--text,#222);background:transparent;">🏆 英雄联盟</div>
+      <div class="rp-game" data-game="lolm" style="display:flex;align-items:center;gap:6px;padding:7px 8px;margin:4px 0 0 10px;border-radius:9px;cursor:pointer;font-size:13px;color:var(--text,#222);background:transparent;">📱 英雄联盟手游</div>
     </div>
   </div>
 
@@ -502,6 +541,57 @@
       <button class="modal-close" id="mdClose" style="background:none;border:none;font-size:20px;cursor:pointer;line-height:1;">✕</button>
     </div>
     <div id="mdContent" style="font-size:14px;line-height:1.7;color:var(--text-secondary,#333);"></div>
+    <!-- 【新增】底部居中的次级按钮：把主视图所有日期相关模块切到这一天 -->
+    <div style="display:flex;justify-content:center;margin-top:16px;">
+      <button class="btn btn-ghost btn-sm" id="mdJumpBtn" type="button">跳转至当日</button>
+    </div>
+  </div>
+</div>
+
+<!-- 【新增】收藏分类选择弹窗：结构与心情详情弹窗完全一致 -->
+<div class="modal-mask" id="quoteFavMask" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;">
+  <div class="modal" style="width:92%;max-width:420px;background:var(--card-bg,#fff);border-radius:14px;padding:18px;box-shadow:0 8px 32px rgba(0,0,0,0.2);box-sizing:border-box;">
+    <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 style="margin:0;font-size:17px;">收藏到分类</h3>
+      <button class="modal-close" id="qfClose" style="background:none;border:none;font-size:20px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div class="qf-preview" id="qfPreview"></div>
+    <div class="cat-chip-group" id="qfCats"></div>
+    <div class="form-row" style="margin-top:12px;">
+      <input type="text" id="qfSource" class="quote-src-input" placeholder="可选：出处 / 作者" maxlength="20" autocomplete="off">
+    </div>
+    <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px;">
+      <button class="btn btn-ghost btn-sm" id="qfCancel" type="button">取消</button>
+      <button class="btn btn-sm" id="qfConfirm" type="button">收藏</button>
+    </div>
+  </div>
+</div>
+
+<!-- 【新增】搜索我的句子库弹窗 -->
+<div class="modal-mask" id="quoteSearchMask" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;">
+  <div class="modal" style="width:92%;max-width:460px;background:var(--card-bg,#fff);border-radius:14px;padding:18px;box-shadow:0 8px 32px rgba(0,0,0,0.2);box-sizing:border-box;">
+    <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 style="margin:0;font-size:17px;">🔍 搜索我的句子库</h3>
+      <button class="modal-close" id="qsClose" style="background:none;border:none;font-size:20px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <input type="text" id="qsInput" class="quote-src-input" placeholder="搜索句子内容、出处或分类" autocomplete="off">
+    <div id="qsResults" class="qs-results"></div>
+  </div>
+</div>
+
+<!-- 【新增】分类管理弹窗：待办与习惯共用，标题与列表按来源切换 -->
+<div class="modal-mask" id="catManageMask" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.5);justify-content:center;align-items:center;">
+  <div class="modal" style="width:92%;max-width:420px;background:var(--card-bg,#fff);border-radius:14px;padding:18px;box-shadow:0 8px 32px rgba(0,0,0,0.2);box-sizing:border-box;">
+    <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 id="cmTitle" style="margin:0;font-size:17px;">管理分类</h3>
+      <button class="modal-close" id="cmClose" style="background:none;border:none;font-size:20px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div id="cmList" class="cm-list"></div>
+    <div class="cm-add-row">
+      <input type="text" id="cmInput" class="quote-src-input" placeholder="新分类名称（2-6 字）" maxlength="6" autocomplete="off">
+      <button class="btn btn-sm" id="cmAdd" type="button">添加</button>
+    </div>
+    <div class="cm-tip" id="cmTip"></div>
   </div>
 </div>
 

@@ -1,0 +1,175 @@
+/* =========================================================
+   LOL / LOLM 面板专属样式
+   只在 #gameDashboard 内的 LOL 专属节点上生效
+   全部走项目既有 CSS 变量，双主题自动跟随，不改 style.css
+   ========================================================= */
+
+/* ---------- 顶部切换条（左上角切换器，掌盟式） ---------- */
+.lol-top-bar {
+  grid-column: 1 / -1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius, 16px);
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border, #e8ecf1);
+  box-shadow: var(--shadow, 0 2px 12px rgba(0,0,0,.06));
+}
+
+.lol-top-left,
+.lol-top-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lol-avatar {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #C8A951, #8A6D2F);
+  box-shadow: 0 2px 8px rgba(200, 169, 81, .28);
+}
+
+/* 切换胶囊（服务器 / 登录方式 / 入口） */
+.lol-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--text, #222);
+  background: var(--bg, #f1f3f6);
+  border: 1px solid var(--border, #e8ecf1);
+  border-radius: 18px;
+  transition: border-color .16s ease, background .16s ease, color .16s ease;
+}
+
+.lol-chip:hover {
+  border-color: var(--primary, #5a9fd4);
+  color: var(--primary, #5a9fd4);
+}
+
+.lol-chip.is-active {
+  color: #fff;
+  background: var(--primary, #5a9fd4);
+  border-color: var(--primary, #5a9fd4);
+}
+
+.lol-caret {
+  font-size: 10px;
+  opacity: .6;
+  transform: translateY(1px);
+}
+
+/* ---------- 切换菜单（下拉展开区） ---------- */
+.lol-menu {
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--radius, 16px);
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border, #e8ecf1);
+  box-shadow: var(--shadow, 0 2px 12px rgba(0,0,0,.06));
+}
+
+.lol-menu-note {
+  width: 100%;
+  font-size: 11px;
+  color: var(--text-secondary, #666);
+  margin-bottom: 2px;
+}
+
+/* ---------- 活动入口条：细条，整条可点 ---------- */
+.lol-act-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 14px;
+  margin: 0;
+  text-decoration: none;
+  border-radius: 12px;
+  background: linear-gradient(90deg, rgba(200, 169, 81, .13), rgba(90, 159, 212, .10));
+  border: 1px solid rgba(200, 169, 81, .38);
+  transition: border-color .16s ease, background .16s ease;
+}
+
+.lol-act-bar:hover {
+  border-color: rgba(200, 169, 81, .65);
+  background: linear-gradient(90deg, rgba(200, 169, 81, .20), rgba(90, 159, 212, .14));
+}
+
+.lol-act-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lol-act-badge {
+  flex: 0 0 auto;
+  font-size: 10px;
+  letter-spacing: .5px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  color: #8A6D2F;
+  background: rgba(200, 169, 81, .18);
+  border: 1px solid rgba(200, 169, 81, .32);
+}
+
+.lol-act-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text, #222);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lol-act-arrow {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: #8A6D2F;
+}
+
+/* ---------- 窄屏 ---------- */
+@media (max-width: 640px) {
+  .lol-top-bar {
+    flex-wrap: wrap;
+  }
+
+  .lol-top-right {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .lol-chip {
+    font-size: 12px;
+    padding: 0 10px;
+  }
+
+  .lol-act-text {
+    font-size: 12px;
+  }
+
+  .lol-act-bar {
+    padding: 0 12px;
+  }
+}

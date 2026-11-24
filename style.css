@@ -1254,3 +1254,110 @@ body {
    注：项目里没有 .todo-item-date / .todo-card 这两个类，对应真实结构是
    .card.collapsed 与 .todo-date-tag。 */
 .card.collapsed .todo-date-tag { display: none !important; }
+
+/* ==================================================================
+   ========== 【11.24 新增】分类体系 · 每日一句扩展 · 日期跳转 ==========
+   全部复用现有变量（--bg / --border / --primary / --text-secondary）与
+   现有圆角、字号规范，不新增任何全局样式变量
+   ================================================================== */
+
+/* 待办搜索行：搜索框 + 「管理分类」按钮同排 */
+.cs-row { display: flex; gap: 8px; align-items: center; }
+.cs-row input { flex: 1; min-width: 0; }
+
+/* 分类筛选栏（习惯卡 / 我的收藏 / 收藏弹窗共用同一套胶囊） */
+.cat-filter-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+.cat-chip-group { display: flex; flex-wrap: wrap; gap: 6px; }
+.cat-chip {
+  font-size: 12px; line-height: 1;
+  padding: 8px 12px; border-radius: 20px;
+  background: var(--bg); color: var(--text-secondary);
+  border: 1px solid var(--border); cursor: pointer;
+  min-height: 32px; display: inline-flex; align-items: center;
+  transition: all 0.2s; user-select: none;
+}
+.cat-chip.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.cat-chip:active { transform: scale(0.96); }
+.cat-manage-btn { margin-left: auto; flex-shrink: 0; }
+
+/* 习惯卡：正在查看历史日期的提示条 */
+.checkin-date-tip {
+  font-size: 11px; color: var(--text-secondary);
+  background: var(--primary-light); border-radius: 8px;
+  padding: 6px 10px; margin-bottom: 8px;
+}
+
+/* 习惯条目上的分类小标签（12px，保证可辨） */
+.cat-mini-tag {
+  font-size: 12px; font-weight: 400; color: var(--text-secondary);
+  background: var(--bg); border-radius: 8px;
+  padding: 1px 7px; margin-left: 6px;
+  display: inline-block; vertical-align: middle;
+}
+.checkin-readonly-tip { font-size: 12px; color: var(--text-secondary); }
+
+/* 每日一句：搜索 + 自定义输入 + 收藏 操作栏 */
+.quote-input-row { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.quote-input-row input {
+  flex: 1; min-width: 120px; box-sizing: border-box;
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px; font-size: 13px;
+  background: var(--bg); color: var(--text); outline: none; font-family: inherit;
+}
+.quote-input-row input:focus { border-color: var(--primary); }
+.quote-search-btn { flex-shrink: 0; padding: 8px 12px; }
+
+/* 收藏项：分类标签 + 出处 */
+.fav-cat-tag {
+  font-size: 12px; line-height: 1.4;
+  padding: 2px 8px; border-radius: 10px;
+  background: var(--primary-light); color: var(--primary);
+  display: inline-block; white-space: nowrap;
+}
+.favorite-src { display: block; font-size: 12px; font-style: normal; color: var(--text-secondary); margin-top: 4px; }
+
+/* 收藏分类弹窗：句子预览 + 通用输入框 */
+.qf-preview {
+  font-size: 14px; font-style: italic; line-height: 1.7;
+  color: var(--text); background: var(--bg); border-radius: 10px;
+  padding: 12px 14px; margin-bottom: 12px;
+}
+.quote-src-input {
+  width: 100%; box-sizing: border-box;
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px; font-size: 13px;
+  background: var(--bg); color: var(--text); outline: none; font-family: inherit;
+}
+.quote-src-input:focus { border-color: var(--primary); }
+
+/* 搜索句子库：结果列表 */
+.qs-results { margin-top: 12px; max-height: 46vh; overflow-y: auto; }
+.qs-item {
+  padding: 10px 12px; border-radius: 10px; background: var(--bg);
+  margin-bottom: 8px; cursor: pointer; transition: background 0.2s;
+}
+.qs-item:active { background: var(--primary-light); }
+.qs-text { font-size: 13px; font-style: italic; line-height: 1.6; color: var(--text); }
+.qs-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; font-size: 12px; }
+.qs-src { font-size: 12px; color: var(--text-secondary); }
+
+/* 分类管理弹窗 */
+.cm-list { max-height: 46vh; overflow-y: auto; }
+.cm-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border);
+}
+.cm-row:last-child { border-bottom: none; }
+.cm-name { font-size: 13px; color: var(--text); display: flex; align-items: center; gap: 6px; }
+.cm-lock { font-size: 11px; color: var(--text-secondary); background: var(--bg); border-radius: 8px; padding: 1px 6px; }
+.cm-ops { display: flex; gap: 6px; flex-shrink: 0; }
+.cm-ops .btn-sm { min-height: 32px; padding: 6px 10px; }
+.cm-ops .btn-sm[disabled] { opacity: 0.45; cursor: not-allowed; }
+.cm-add-row { display: flex; gap: 8px; align-items: center; margin-top: 14px; }
+.cm-add-row .quote-src-input { flex: 1; min-width: 0; }
+.cm-tip { font-size: 11px; color: var(--text-secondary); line-height: 1.6; margin-top: 8px; }
+
+@media (max-width: 480px) {
+  .cat-manage-btn { margin-left: 0; }
+  .quote-input-row input { min-width: 0; }
+}

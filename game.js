@@ -23,10 +23,21 @@ const API_BASE = (window.location.hostname === '127.0.0.1' || window.location.ho
 const GD_GAME_LABELS = {
   maimai: '舞萌 DX',
   dancecube: '舞立方',
-  lol: 'LOL',
-  hok: '王者荣耀',
-  valorant: '瓦罗兰特',
+  lol: '英雄联盟',
+  lolm: '英雄联盟手游',
+  hok: '王者荣耀',        // 已从右侧菜单移除，映射保留：接口调试时仍能给出正确中文名，不影响现有逻辑
+  valorant: '瓦罗兰特',   // 同上，已从菜单移除
 };
+
+/* ---------- 【预留】LOL / LOLM 接口接入位（纯注释，本次不实现） ----------
+两者当前都走通用链路：fetchRealGameData(gameId) → 后端 /api/get_game_data → 失败时 renderGdError。
+后端现状（main.py 的 ALL_GAMES = REAL_GAMES + ["lol", "hok", "valorant"]）：
+· lol   → 501「该游戏暂未接入真实数据源」
+· lolm  → 404「未知游戏：lolm」（ALL_GAMES 尚未包含），前端同样落到 renderGdError，不会崩
+后续接入时前端零改动，只需后端把 lolm 补进 ALL_GAMES 并补数据源，返回体保持 6 字段：
+{ label, player:{name,sub,level,rank,avatar}, stats:[{label,value}],
+  matches:[{main,sub}], highlights:[{text,color:blue|green|amber}], tip }
+-------------------------------------------------------------------------- */
 
 // 请求序号：连点不同游戏时只认最后一次点击的结果，避免先发的慢响应覆盖后发的新数据
 let gdRequestSeq = 0;
@@ -35,7 +46,7 @@ let gdRequestSeq = 0;
 
 /**
  * 拉取某个游戏的真实数据
- * @param {string} gameId maimai / dancecube / lol / hok / valorant
+ * @param {string} gameId maimai / dancecube / lol / lolm
  * @param {number} timeoutMs 超时毫秒数（魔搭冷启动慢，给足 45 秒）
  * @returns {Promise<object>} 结构：{label, player, stats, matches, highlights, tip}
  */
@@ -45,7 +56,7 @@ async function fetchRealGameData(gameId, timeoutMs) {
 
   /* ---------- maimai 专用：透传水鱼 Token ----------
      后端 FastAPI 无状态，读取 X-Mx-ReqToken 头（Authorization 会被魔搭网关拦截）。
-     其他游戏（dancecube / lol / hok / valorant）走下面的原逻辑。 */
+     其他游戏（dancecube / lol / lolm）走下面的原逻辑。 */
   const extraHeaders = {};
   if (gameId === 'maimai') {
     const token = readDfToken();
@@ -61,7 +72,7 @@ async function fetchRealGameData(gameId, timeoutMs) {
   }
 
   /* ---------- dancecube 专用：透传舞立方凭证 ----------
-     后端 dancecube 分支认 Authorization: Bearer + ?userId= 两项，
+     后端 dancecube 分支认 X-Mx-ReqToken + ?userId= 两项（Authorization 会被魔搭网关 403），
      缺任一项后端直接 401，所以这里先本地校验，不发无意义的请求。 */
   if (gameId === 'dancecube') {
     const dc = readDcToken();
@@ -493,6 +504,15 @@ async function showGameDashboard(gameId) {
 
   window.scrollTo({ top: 0, behavior: 'smooth' });   // 回到顶部看面板
 
+  // 【新增｜LOL 专属】只对端游/手游显示切换条与活动入口，其余游戏一律隐藏
+  syncLolNodes(gameId);
+
+  // 【新增｜LOL / LOLM】纯本地数据渲染（localStorage），不发任何后端请求
+  if (gameId === 'lol' || gameId === 'lolm') {
+    renderLolDashboard(gameId);
+    return;
+  }
+
   renderGdLoading(gameId);       // 立刻给反馈，别让用户以为没点上
 
   try {
@@ -614,3 +634,280 @@ function bindRightPanelToggle() {
 
   hidePanel();   // 初始一律收起，盖掉任何被别处改成展开的状态
 }
+
+/* ============================================================
+   【新增｜LOL / LOLM】纯本地数据面板
+   · 数据落在 localStorage['novarise_lol_profile']，不发任何请求
+   · 首次打开写入种子档（用户掌盟战绩页快照），之后以本机存档为准
+   · 结构与舞萌/舞立方一致：沿用 mod1~mod4 四张卡，不新增页面层级
+   · 未核实字段（如英雄名）一律不写，宁缺不编
+   ============================================================ */
+
+const LOL_PROFILE_KEY = 'novarise_lol_profile';
+const LOL_ACT_URL = 'https://lol.qq.com/act/a20261115champion/preview.html?e_code=500130';
+const LOL_ACT_END = '2026-12-27';   // 官方活动结束日，过期自动隐藏入口条，免人工维护
+
+// 国服公开大区名（用于本地切换显示，不发起任何连接）
+const LOL_REGIONS = ['艾欧尼亚', '黑色玫瑰', '德玛西亚', '诺克萨斯', '祖安', '皮尔特沃夫', '巨神峰', '教育网专区', '峡谷之巅'];
+
+// 种子档：来自用户掌盟「战绩 / 能力」页快照（2026-11-20 前后）
+// 英雄名无法确认，一律不写；只保留能看清的 KDA、评分、模式、队列、时间
+const LOL_SEED_PROFILE = {
+  riotId: 'Si00008#74097',
+  region: '艾欧尼亚',
+  login: 'QQ',
+  lolRank: '不屈白银 IV',
+  lolmRank: '铂金 II',
+  season: 'S16 三赛段',
+  totals: { matches: 133, winRate: 45.1, mvpSvp: 7 },
+  modes: [
+    { name: '经典模式', matches: 0, winRate: 0 },
+    { name: '海斗(经典)', matches: 0, winRate: 0 },
+    { name: '海克斯大乱斗', matches: 16, winRate: 43.7 },
+    { name: '灵活排位', matches: 49, winRate: 32.6 },
+    { name: '单双排', matches: 68, winRate: 54.4 },
+  ],
+  matches: [
+    { result: 'win',  kda: '9/17/33', score: '11.0', mode: '海克斯大乱斗', queue: '—',           time: '11-20 21:40' },
+    { result: 'win',  kda: '5/7/11',  score: '8.3',  mode: '灵活组排',    queue: '白银 IV 34',   time: '11-20 21:08' },
+    { result: 'lose', kda: '1/6/6',   score: '6.8',  mode: '灵活组排',    queue: '白银 IV 13',   time: '11-20 20:30' },
+    { result: 'lose', kda: '1/7/0',   score: '9.0',  mode: '灵活组排',    queue: '白银 IV 32',   time: '11-20 20:05' },
+    { result: 'win',  kda: '5/6/7',   score: '9.6',  mode: '灵活组排',    queue: '白银 IV 50',   time: '11-17 19:02' },
+    { result: 'win',  kda: '2/10/12', score: '7.8',  mode: '单双排',      queue: '黑铁 I 23',    time: '11-17 18:23' },
+    { result: 'lose', kda: '5/11/8',  score: '7.8',  mode: '灵活组排',    queue: '白银 IV 28',   time: '11-15 17:17' },
+    { result: 'lose', kda: '3/7/2',   score: '6.6',  mode: '灵活组排',    queue: '白银 IV',      time: '11-15 16:40' },
+  ],
+  favorites: [],   // 职业选手收藏，由职业选手页写回
+};
+
+function lolClone(o) {
+  return JSON.parse(JSON.stringify(o));
+}
+
+function readLolProfile() {
+  try {
+    const raw = localStorage.getItem(LOL_PROFILE_KEY);
+    if (!raw) {
+      const seed = lolClone(LOL_SEED_PROFILE);
+      localStorage.setItem(LOL_PROFILE_KEY, JSON.stringify(seed));
+      return seed;
+    }
+    const parsed = JSON.parse(raw);
+    return Object.assign(lolClone(LOL_SEED_PROFILE), parsed || {});
+  } catch (e) {
+    return lolClone(LOL_SEED_PROFILE);
+  }
+}
+
+function writeLolProfile(patch) {
+  try {
+    const next = Object.assign({}, readLolProfile(), patch);
+    localStorage.setItem(LOL_PROFILE_KEY, JSON.stringify(next));
+    return next;
+  } catch (e) {
+    return null;
+  }
+}
+
+// 活动是否仍在有效期（过了截止日就自动收起入口条）
+function lolActAvailable() {
+  const end = new Date(LOL_ACT_END + 'T23:59:59');
+  if (isNaN(end.getTime())) return true;
+  return new Date() <= end;
+}
+
+// 端游/手游专属节点的显隐
+function syncLolNodes(gameId) {
+  const isLol = (gameId === 'lol' || gameId === 'lolm');
+  const bar = document.getElementById('lolTopBar');
+  if (bar) bar.style.display = isLol ? 'flex' : 'none';
+
+  const menu = document.getElementById('lolSwitchMenu');
+  if (menu) {
+    menu.style.display = 'none';
+    menu.innerHTML = '';
+  }
+
+  const act = document.getElementById('lolActLink');
+  if (act) {
+    if (isLol && lolActAvailable()) {
+      act.setAttribute('href', LOL_ACT_URL);
+      act.style.display = 'flex';
+    } else {
+      act.style.display = 'none';
+    }
+  }
+}
+
+// 切换菜单：端游列大区 / 手游列登录方式
+function renderLolSwitchMenu() {
+  const menu = document.getElementById('lolSwitchMenu');
+  if (!menu) return;
+  const p = readLolProfile();
+
+  if (gdCurrentGame === 'lolm') {
+    menu.innerHTML = '<div class="lol-menu-note">选择登录方式（仅本地记录，不发起授权）</div>' +
+      ['QQ', '微信'].map(v => '<button type="button" class="lol-chip' + (p.login === v ? ' is-active' : '') +
+        '" data-login="' + escapeHtml(v) + '">' + escapeHtml(v) + '</button>').join('');
+    menu.querySelectorAll('[data-login]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        writeLolProfile({ login: b.getAttribute('data-login') });
+        menu.style.display = 'none';
+        renderLolDashboard('lolm');
+      });
+    });
+  } else {
+    menu.innerHTML = '<div class="lol-menu-note">选择服务器大区（仅本地记录，不发起连接）</div>' +
+      LOL_REGIONS.map(v => '<button type="button" class="lol-chip' + (p.region === v ? ' is-active' : '') +
+        '" data-region="' + escapeHtml(v) + '">' + escapeHtml(v) + '</button>').join('');
+    menu.querySelectorAll('[data-region]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        writeLolProfile({ region: b.getAttribute('data-region') });
+        menu.style.display = 'none';
+        renderLolDashboard('lol');
+      });
+    });
+  }
+}
+
+// 用本地存档渲染 mod1~mod4，排版与舞萌/舞立方完全相同
+function renderLolDashboard(gameId) {
+  const p = readLolProfile();
+  const isMobile = (gameId === 'lolm');
+  const label = isMobile ? '英雄联盟手游' : '英雄联盟';
+  const setText = function (id, text) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+
+  // 顶部切换器文案与头像
+  const switchLabel = document.getElementById('lolSwitchLabel');
+  if (switchLabel) switchLabel.textContent = isMobile ? (p.login + ' 登录') : p.region;
+  const avatarEl = document.getElementById('lolAvatar');
+  if (avatarEl) avatarEl.textContent = isMobile ? '手' : 'L';
+
+  // 模块1：玩家信息
+  setText('gdGameName', label + ' · 玩家信息');
+  setText('gdPlayerTag', '本机存档');
+  setText('gdPlayerName', p.riotId || '未设置召唤师');
+  setText('gdPlayerSub', p.region + ' · ' + (isMobile ? p.login + ' 登录' : '电信'));
+  setText('gdPlayerLevel', 'LOL ' + p.lolRank);
+  setText('gdPlayerRank', 'LOLM ' + p.lolmRank);
+  const gdAvatar = document.getElementById('gdAvatar');
+  if (gdAvatar) gdAvatar.textContent = '🎯';
+
+  // 模块2：核心数据（四格，与舞萌同版式）
+  const statGrid = document.getElementById('gdStatsGrid');
+  if (statGrid) {
+    const cells = [
+      { label: '赛段总场次', value: String(p.totals.matches) },
+      { label: '赛段胜率', value: p.totals.winRate + '%' },
+      { label: 'MVP / SVP', value: String(p.totals.mvpSvp) },
+      { label: '当前赛季', value: p.season },
+    ];
+    statGrid.innerHTML = cells.map(function (c) {
+      return '<div style="padding:10px 12px;border-radius:12px;background:var(--bg,#f1f3f6);">' +
+        '<div style="font-size:11px;color:var(--text-secondary,#666);">' + escapeHtml(c.label) + '</div>' +
+        '<div class="gd-stat-value" style="font-size:20px;font-weight:700;color:var(--text,#222);margin-top:2px;">' +
+        escapeHtml(c.value) + '</div></div>';
+    }).join('');
+  }
+  const statTag = document.querySelector('#mod2-stats .card-title-right');
+  if (statTag) statTag.textContent = '本地存档 · 非实时';
+
+  // 模块3：近期战绩（6 行）
+  const matchList = document.getElementById('gdMatchesList');
+  if (matchList) {
+    matchList.innerHTML = p.matches.slice(0, 6).map(function (m) {
+      const win = (m.result === 'win');
+      const color = win ? 'var(--success,#39b54a)' : 'var(--danger,#e64a45)';
+      return '<div class="gd-match-row" style="display:flex;align-items:center;justify-content:space-between;' +
+        'padding:8px 10px;border-radius:10px;background:var(--bg,#f1f3f6);font-size:13px;color:var(--text,#222);">' +
+        '<span><span style="color:' + color + ';font-weight:600;">' + (win ? '胜利' : '失败') + '</span> · ' +
+        escapeHtml(m.kda) + '</span>' +
+        '<span style="font-size:12px;color:var(--text-secondary,#666);">' +
+        escapeHtml(m.mode) + ' · ' + escapeHtml(m.time) + ' · ' + escapeHtml(m.score) + '</span></div>';
+    }).join('');
+  }
+  const matchTag = document.querySelector('#mod3-matches .card-title-right');
+  if (matchTag) matchTag.textContent = '最近 6 场';
+
+  // 模块4：特色亮点（由本地数据派生，不编造额外战绩）
+  const highlightList = document.getElementById('gdHighlightsList');
+  if (highlightList) {
+    const tags = [
+      { text: '单双排 ' + p.modes[4].matches + ' 场', color: 'blue' },
+      { text: '灵活组排 ' + p.modes[3].matches + ' 场', color: 'green' },
+      { text: '大乱斗 ' + p.modes[2].matches + ' 场', color: 'amber' },
+    ];
+    highlightList.innerHTML = tags.map(function (t) {
+      return '<span class="gd-highlight-tag" style="font-size:12px;padding:5px 10px;border-radius:20px;' +
+        (GD_TAG_COLORS[t.color] || GD_TAG_COLORS.blue) + '">' + escapeHtml(t.text) + '</span>';
+    }).join('');
+  }
+  let tipEl = document.getElementById('gdTipText');
+  if (!tipEl) {
+    const cand = Array.prototype.slice.call(document.querySelectorAll('#mod4-highlights div'))
+      .filter(function (el) { return !el.children.length && el.textContent.indexOf('接入') > -1; })[0];
+    if (cand) { cand.id = 'gdTipText'; tipEl = cand; }
+  }
+  if (tipEl) {
+    tipEl.textContent = isMobile
+      ? '手游与端游共用同一份本机存档；切 QQ / 微信只改本地显示，不发起授权。'
+      : '数据来自本机存档（localStorage），未接实时接口；切大区只改本地显示，不发起连接。';
+  }
+}
+
+// 端游/手游专属节点的事件绑定（只绑一次）
+function bindLolPanelEvents() {
+  const switchBtn = document.getElementById('lolSwitchBtn');
+  const menu = document.getElementById('lolSwitchMenu');
+
+  if (switchBtn && menu) {
+    switchBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      const open = menu.style.display === 'flex';
+      if (open) {
+        menu.style.display = 'none';
+        switchBtn.setAttribute('aria-expanded', 'false');
+      } else {
+        renderLolSwitchMenu();
+        menu.style.display = 'flex';
+        switchBtn.setAttribute('aria-expanded', 'true');
+      }
+    });
+  }
+
+  // 点空白收起切换菜单
+  document.addEventListener('click', function (e) {
+    if (!menu || menu.style.display !== 'flex') return;
+    const t = e.target;
+    if (t && t.closest && (t.closest('#lolSwitchMenu') || t.closest('#lolSwitchBtn'))) return;
+    menu.style.display = 'none';
+    if (switchBtn) switchBtn.setAttribute('aria-expanded', 'false');
+  });
+
+  const myDataBtn = document.getElementById('lolMyDataBtn');
+  if (myDataBtn) myDataBtn.addEventListener('click', function () { window.open('lol-honor.html', '_blank'); });
+
+  const proBtn = document.getElementById('lolProBtn');
+  if (proBtn) proBtn.addEventListener('click', function () { window.open('lol-pro.html', '_blank'); });
+
+  const actLink = document.getElementById('lolActLink');
+  if (actLink) actLink.setAttribute('href', LOL_ACT_URL);
+
+  // 分类标题折叠：MOBA 分组默认展开，点标题可收起/展开（原本没有这段逻辑，标题点不动）
+  Array.prototype.forEach.call(document.querySelectorAll('.rp-group-head'), function (head) {
+    if (head.dataset.lolBound) return;
+    head.dataset.lolBound = '1';
+    head.addEventListener('click', function () {
+      const body = head.nextElementSibling;
+      if (!body || !body.classList.contains('rp-group-body')) return;
+      const open = body.style.display !== 'none';
+      body.style.display = open ? 'none' : 'block';
+      head.textContent = head.textContent.replace(/^([▾▸])/, open ? '▸' : '▾');
+    });
+  });
+}
+
+bindLolPanelEvents();

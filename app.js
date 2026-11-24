@@ -265,8 +265,41 @@
 // ========== 【分区 2】全局状态与常量 ==========
 const STORAGE_KEY = 'Novarise_data';
 // 【本轮】数据版本号：旧数据读进来后由 migrateData 统一补齐字段并升到最新版本
-const DATA_VERSION = '2.4';
-const TODO_TYPES = ['工作', '生活', '学习', '其他'];
+// 【11.24】升为 2.4.11：本批新增 分类列表 / 按日便签 / 收藏分类 / 打卡日志 四个字段，
+// 升级后旧存档会整体回写一次（migratedFrom 与新版本不等即触发），之后不再重复写存储
+const DATA_VERSION = '2.4.11';
+const TODO_TYPES = ['工作', '生活', '学习', '效率', '项目', '其他'];
+
+/* ============================================
+   【11.24 新增】分类体系常量
+   - 待办：事务导向，原 4 类（工作/生活/学习/其他）保留，新增「效率」「项目」，共 6 类
+   - 习惯：养成导向，与待办异化，默认 6 类
+   - 两者都允许用户自定义增删改，上限 8 个（含默认），「其他」作兜底分类
+   ============================================ */
+const DEFAULT_TODO_CATS = TODO_TYPES;   // 与 TODO_TYPES 同源，保留旧常量名给历史代码用
+const DEFAULT_HABIT_CATS = ['健康', '学习', '工作', '生活', '成长', '兴趣'];
+const HABIT_OTHER = '其他';           // 习惯分类被删除时的迁移目标（不在默认 6 类内，按需自动补）
+const CAT_MAX = 8;                    // 分类数量上限（含默认）
+const QUOTE_CATS = ['通用', '原创', '网络流行', '影视台词', '名人名言', '书籍语录'];
+const ALL_CAT = '全部';                // 筛选栏「全部」项
+
+// 取当前可用的分类列表：优先用用户自定义后的存档，缺省回落默认
+function todoCats() {
+  return (data && Array.isArray(data.todoCats) && data.todoCats.length) ? data.todoCats : DEFAULT_TODO_CATS;
+}
+function habitCats() {
+  return (data && Array.isArray(data.habitCats) && data.habitCats.length) ? data.habitCats : DEFAULT_HABIT_CATS;
+}
+// 分类清洗：去空、去重、截断到上限；forceOther=true 时保证兜底分类「其他」存在
+function sanitizeCats(rawList, defaultList, forceOther) {
+  let list = Array.isArray(rawList) ? rawList.filter(x => typeof x === 'string' && x.trim()) : [];
+  list = list.map(x => x.trim()).filter((x, i, arr) => arr.indexOf(x) === i);
+  if (list.length === 0) list = defaultList.slice();
+  if (forceOther && !list.includes(HABIT_OTHER)) {
+    if (list.length < CAT_MAX) list.push(HABIT_OTHER);
+  }
+  return list.slice(0, CAT_MAX);
+}
 
 // ========== 【分区 1】全局工具函数（Toast / 存储 / 日期 / 转义等公共方法） ==========
 // ---------- 工具 ----------
@@ -338,9 +371,21 @@ function defaultData() {
       { id:'c4', name:'早睡', emoji:'😴', target:1, count:0, countDate:'', streak:0, lastDate:'' },
     ],
     checkinViewMode: 'list',
+    // 【11.24 新增】习惯卡分类筛选 + 查看日期（空 = 今天，非今天只读）
+    checkinFilterCat: ALL_CAT,
+    checkinViewDate: '',
+    // 【11.24 新增】打卡日志：{ 'YYYY-MM-DD': { 习惯id: 次数 } }，供历史日期回看
+    checkinLog: {},
+    // 【11.24 新增】分类列表（可增删改，上限 8）
+    todoCats: DEFAULT_TODO_CATS.slice(),
+    habitCats: DEFAULT_HABIT_CATS.slice(),
     mood: {},
-    quote: { currentIdx: 0, favorites: [] },
+    // 【11.24 新增】customText：当前自定义句子；favFilter：我的收藏分类筛选
+    quote: { currentIdx: 0, favorites: [], customText: '', favFilter: ALL_CAT },
     note: '',
+    // 【11.24 新增】按日期保存的便签；noteDate 为空表示跟随今天
+    notes: {},
+    noteDate: '',
   };
 }
 
@@ -362,6 +407,11 @@ function migrateData(raw) {
   // 【本轮】记下旧版本号：老数据这里是没有 version 字段的，方便排查迁移来源
   const fromVersion = (typeof raw.version === 'string' && raw.version) ? raw.version : '0.0';
 
+  // 【11.24 新增】分类列表迁移：必须排在 todos / checkins 的字段校验之前，
+  // 否则用户自定义的分类会被当作非法值重置成「其他」，等于把人家建的分类删了。
+  m.todoCats = sanitizeCats(raw.todoCats, DEFAULT_TODO_CATS, true);
+  m.habitCats = sanitizeCats(raw.habitCats, DEFAULT_HABIT_CATS, false);
+
   // todos
   if (Array.isArray(m.todos)) {
     m.todos = m.todos.map(t => ({
@@ -369,7 +419,8 @@ function migrateData(raw) {
       text: t.text || '',
       done: !!t.done,
       date: (t.date && /^\d{4}-\d{2}-\d{2}$/.test(t.date)) ? t.date : todayStr(),
-      type: (t.type && TODO_TYPES.includes(t.type)) ? t.type : '其他',
+      // 【11.24 改】校验基准由固定 4 类改为当前分类列表，自定义分类不会被重置
+      type: (t.type && m.todoCats.includes(t.type)) ? t.type : '其他',
     }));
   } else m.todos = [];
 
@@ -385,7 +436,8 @@ function migrateData(raw) {
       streak: typeof c.streak === 'number' ? c.streak : 0,
       lastDate: c.lastDate || '',
       // 【修改点】保留新建习惯弹窗写入的分类与长期计划天数
-      category: typeof c.category === 'string' && c.category ? c.category : '其他',
+      // 【11.24 改】分类校验：存量数据缺分类或仍挂在旧默认「其他」上的，统一归入「生活」
+      category: (typeof c.category === 'string' && m.habitCats.includes(c.category)) ? c.category : '生活',
       planDays: typeof c.planDays === 'number' && c.planDays > 0 ? c.planDays : 0,
     }));
   }
@@ -398,7 +450,7 @@ function migrateData(raw) {
         target: 1, count: 0, countDate: '',
         streak: typeof h.streak === 'number' ? h.streak : 0,
         lastDate: h.lastDate || '',
-        category: '其他', planDays: 0,
+        category: '生活', planDays: 0,
       });
     });
   }
@@ -412,7 +464,7 @@ function migrateData(raw) {
         count: typeof w.count === 'number' ? w.count : 0,
         countDate: m.water.date || '',
         streak: 0, lastDate: '',
-        category: '其他', planDays: 0,
+        category: '生活', planDays: 0,
       });
     });
   }
@@ -428,11 +480,16 @@ function migrateData(raw) {
   }
   m.checkins = checkins;
   m.checkinViewMode = m.checkinViewMode === 'stack' ? 'stack' : 'list';
+  // 【11.24 新增】习惯卡筛选分类 / 查看日期兜底（日期非法时回落今天）
+  m.checkinFilterCat = (typeof m.checkinFilterCat === 'string' && m.checkinFilterCat) ? m.checkinFilterCat : ALL_CAT;
+  m.checkinViewDate = (typeof m.checkinViewDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(m.checkinViewDate)) ? m.checkinViewDate : '';
+  // 【11.24 新增】打卡日志兜底（旧数据没有这个字段，给空对象即可）
+  if (!m.checkinLog || typeof m.checkinLog !== 'object' || Array.isArray(m.checkinLog)) m.checkinLog = {};
   delete m.habits; delete m.water;
 
   if (!m.mood || typeof m.mood !== 'object') m.mood = {};
 
-  if (!m.quote || typeof m.quote !== 'object') m.quote = { currentIdx: 0, favorites: [] };
+  if (!m.quote || typeof m.quote !== 'object') m.quote = { currentIdx: 0, favorites: [], customText: '', favFilter: ALL_CAT };
   if (!Array.isArray(m.quote.favorites)) m.quote.favorites = [];
   if (typeof m.quote.currentIdx !== 'number') m.quote.currentIdx = 0;
   if (m.favoriteQuote && typeof m.favoriteQuote === 'string' && m.favoriteQuote) {
@@ -445,6 +502,22 @@ function migrateData(raw) {
     m.quote.currentIdx = m.currentQuoteIdx;
     delete m.currentQuoteIdx;
   }
+  // 【11.24 新增】收藏项结构规范化：存量收藏没有分类字段，一律归「通用」，内容与日期原样保留
+  m.quote.favorites = m.quote.favorites.map(f => ({
+    text: (f && typeof f.text === 'string') ? f.text : '',
+    date: (f && typeof f.date === 'string' && f.date) ? f.date : todayStr(),
+    cat: (f && typeof f.cat === 'string' && QUOTE_CATS.includes(f.cat)) ? f.cat : '通用',
+    src: (f && typeof f.src === 'string') ? f.src : '',
+  })).filter(f => f.text);
+  // 当前自定义句子 / 收藏筛选分类兜底
+  if (typeof m.quote.customText !== 'string') m.quote.customText = '';
+  if (typeof m.quote.favFilter !== 'string' || !m.quote.favFilter) m.quote.favFilter = ALL_CAT;
+
+  // 【11.24 新增】便签改为按日期存储：旧版单一 note 迁到今天，内容与自动保存体验都不变
+  if (!m.notes || typeof m.notes !== 'object' || Array.isArray(m.notes)) m.notes = {};
+  if (typeof m.note !== 'string') m.note = '';
+  if (m.note.trim() && typeof m.notes[todayStr()] !== 'string') m.notes[todayStr()] = m.note;
+  m.noteDate = (typeof m.noteDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(m.noteDate)) ? m.noteDate : '';
 
   // avatar 兼容：旧数据一定是 emoji 字符串；如果是图片 URL/base64 也保留
   if (!m.avatar || typeof m.avatar !== 'string') m.avatar = '😊';
@@ -581,6 +654,8 @@ function renderTodos() {
   const pct = total === 0 ? 0 : Math.round(done/total*100);
   document.getElementById('todoProgress').style.width = pct + '%';
   document.getElementById('todoProgressText').textContent = `${done} / ${total}（${pct}%）`;
+  // 【11.24 新增】分类下拉跟随当前分类列表重建，分类增删改后无需手动刷新
+  renderTodoCatOptions();
 }
 function renderByDate(todos) {
   const byDate = {};
@@ -592,7 +667,10 @@ function renderByDate(todos) {
     const label = isToday ? '今天' : formatDateCN(date);
     const byType = {};
     list.forEach(t => { if (!byType[t.type]) byType[t.type] = []; byType[t.type].push(t); });
-    const subs = TODO_TYPES.filter(type => byType[type]).map(type =>
+    // 【11.24 改】分组顺序跟随当前分类列表；列表外的历史类型排在最后，避免数据不显示
+    const cats = todoCats();
+    const order = cats.concat(Object.keys(byType).filter(type => !cats.includes(type)));
+    const subs = order.filter(type => byType[type]).map(type =>
       `<div class="todo-subgroup"><div class="todo-subgroup-title"># ${type}</div>${byType[type].map(todoItemHtml).join('')}</div>`
     ).join('');
     return `<div class="todo-group" data-group="${date}">
@@ -607,8 +685,11 @@ function renderByDate(todos) {
 function renderByType(todos) {
   const byType = {};
   todos.forEach(t => { if (!byType[t.type]) byType[t.type] = []; byType[t.type].push(t); });
-  const icons = { '工作':'💼','生活':'🏠','学习':'📖','其他':'📌' };
-  return TODO_TYPES.filter(type => byType[type]).map(type => {
+  const icons = { '工作':'💼','生活':'🏠','学习':'📖','效率':'⚡','项目':'🎯','其他':'📌' };
+  // 【11.24 改】按当前分类列表遍历，新增的「效率」「项目」与自定义分类都会成组显示
+  const cats = todoCats();
+  const order = cats.concat(Object.keys(byType).filter(type => !cats.includes(type)));
+  return order.filter(type => byType[type]).map(type => {
     const list = byType[type];
     const doneCount = list.filter(t => t.done).length;
     const byDate = {};
@@ -720,48 +801,92 @@ function clearAllCheckins() {
 function renderCheckins() {
   normalizeCheckins();
   const c = document.getElementById('checkinContainer');
+  // 【11.24 新增】筛选栏 / 日期提示 / 分类下拉跟随存档同步
+  renderCheckinCatFilter();
+  renderCheckinDateTip();
+  renderHabitCatOptions();
   if (data.checkins.length === 0) {
     // 【修改点】文案更新：习惯与打卡已合并，引导使用"新建习惯"按钮
     c.innerHTML = '<div class="empty-state"><span class="emoji">✅</span>还没有习惯，点击下方「＋ 新建习惯」添加</div>';
     return;
   }
-  c.innerHTML = data.checkinViewMode === 'stack' ? renderCheckinStack() : renderCheckinList();
+  const list = getVisibleCheckins();
+  if (list.length === 0) {
+    c.innerHTML = '<div class="empty-state"><span class="emoji">🔍</span>该分类下还没有习惯</div>';
+    return;
+  }
+  c.innerHTML = data.checkinViewMode === 'stack' ? renderCheckinStack(list) : renderCheckinList(list);
 }
-function renderCheckinList() {
-  return data.checkins.map(item => {
-    const pct = Math.min(100, item.count/item.target*100);
+// 【11.24 新增】习惯卡当前查看的日期：空值 / 非法值一律按今天
+function viewCheckinDate() {
+  return (typeof data.checkinViewDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.checkinViewDate))
+    ? data.checkinViewDate : todayStr();
+}
+// 【11.24 新增】按分类筛选 + 按查看日期取次数的习惯清单
+// 非今天：优先读打卡日志 checkinLog[日期][id]，没有日志则回落到 countDate 快照，
+// 都没有就按 0 处理（不虚构历史数据）
+function getVisibleCheckins() {
+  const ds = viewCheckinDate();
+  const isTodayView = ds === todayStr();
+  const cat = data.checkinFilterCat || ALL_CAT;
+  let list = data.checkins;
+  if (cat !== ALL_CAT) list = list.filter(c => (c.category || '生活') === cat);
+  const log = (data.checkinLog && typeof data.checkinLog[ds] === 'object') ? data.checkinLog[ds] : null;
+  return list.map(c => {
+    let count;
+    if (isTodayView) count = c.count;
+    else if (log && typeof log[c.id] === 'number') count = log[c.id];
+    else if (c.countDate === ds) count = c.count;
+    else count = 0;
+    return { id: c.id, name: c.name, emoji: c.emoji, target: c.target, count, category: c.category, planDays: c.planDays };
+  });
+}
+// 【11.24 新增】写一条打卡日志，供历史日期回看（只记录次数，不动原 count / countDate 逻辑）
+function recordCheckinLog(id, ds, count) {
+  if (!data.checkinLog || typeof data.checkinLog !== 'object' || Array.isArray(data.checkinLog)) data.checkinLog = {};
+  if (!data.checkinLog[ds] || typeof data.checkinLog[ds] !== 'object') data.checkinLog[ds] = {};
+  data.checkinLog[ds][id] = count;
+}
+function renderCheckinList(list) {
+  // 【11.24 新增】查看非今天时降级为只读，避免把历史快照写进今天的 count
+  const readonly = viewCheckinDate() !== todayStr();
+  return list.map(item => {
+    const pct = item.target ? Math.min(100, item.count/item.target*100) : 0;
     return `<div class="checkin-item">
       <div class="checkin-item-header">
-        <span class="checkin-item-name">${item.emoji} ${escapeHtml(item.name)}</span>
+        <span class="checkin-item-name">${item.emoji} ${escapeHtml(item.name)}<span class="cat-mini-tag">${escapeHtml(item.category || '生活')}</span></span>
         <span>
-          <span class="checkin-item-count" data-target-edit="${item.id}" title="点击修改目标">${item.count} / ${item.target}</span>
-          <button class="checkin-target-btn" data-target-edit="${item.id}" title="修改目标">改目标</button>
+          <span class="checkin-item-count"${readonly?'':` data-target-edit="${item.id}" title="点击修改目标"`}>${item.count} / ${item.target}</span>
+          ${readonly ? '' : `<button class="checkin-target-btn" data-target-edit="${item.id}" title="修改目标">改目标</button>`}
         </span>
       </div>
       <div class="water-bar"><div class="water-fill" style="width:${pct}%"></div></div>
       <div class="checkin-controls">
-        <button class="btn" data-checkin-add="${item.id}">+1</button>
-        <button class="btn btn-ghost" data-checkin-minus="${item.id}">-1</button>
-        <button class="checkin-remove" data-checkin-del="${item.id}" title="删除">✕</button>
+        ${readonly
+          ? '<span class="checkin-readonly-tip">历史记录只读</span>'
+          : `<button class="btn" data-checkin-add="${item.id}">+1</button>
+             <button class="btn btn-ghost" data-checkin-minus="${item.id}">-1</button>
+             <button class="checkin-remove" data-checkin-del="${item.id}" title="删除">✕</button>`}
       </div>
     </div>`;
   }).join('');
 }
-function renderCheckinStack() {
-  const totalCount = data.checkins.reduce((s,i)=>s+i.count,0);
-  const totalTarget = data.checkins.reduce((s,i)=>s+i.target,0);
-  const pct = Math.min(100, totalCount/totalTarget*100);
-  const tags = data.checkins.map(item => {
+function renderCheckinStack(list) {
+  const readonly = viewCheckinDate() !== todayStr();
+  const totalCount = list.reduce((s,i)=>s+i.count,0);
+  const totalTarget = list.reduce((s,i)=>s+i.target,0);
+  const pct = totalTarget ? Math.min(100, totalCount/totalTarget*100) : 0;
+  const tags = list.map(item => {
     const done = item.count >= item.target;
-    return `<span class="checkin-tag ${done?'done':''}" data-tag-id="${item.id}">${item.emoji} ${escapeHtml(item.name)} ${item.count}/${item.target}</span>`;
+    return `<span class="checkin-tag ${done?'done':''}"${readonly?'':` data-tag-id="${item.id}"`}>${item.emoji} ${escapeHtml(item.name)} ${item.count}/${item.target}</span>`;
   }).join('');
   return `<div class="water-summary">
       <div class="water-summary-count">${totalCount}</div>
-      <div class="water-summary-target">今日目标 ${totalTarget} 次</div>
+      <div class="water-summary-target">${readonly ? '当日记录' : '今日目标'} ${totalTarget} 次</div>
     </div>
     <div class="water-bar"><div class="water-fill" style="width:${pct}%"></div></div>
     <div class="checkin-tags">${tags}</div>
-    <div style="font-size:11px;color:var(--text-secondary);text-align:center;margin-top:6px">点击标签展开操作</div>`;
+    <div style="font-size:11px;color:var(--text-secondary);text-align:center;margin-top:6px">${readonly ? '历史记录只读' : '点击标签展开操作'}</div>`;
 }
 function checkinAdd(id) {
   const item = data.checkins.find(x => String(x.id) === String(id));
@@ -769,6 +894,8 @@ function checkinAdd(id) {
   const old = item.count;
   item.count++; item.countDate = todayStr();
   checkStreakOnCount(item, old, item.count);
+  // 【11.24 新增】同步写入当天打卡日志，供「跳转至当日」回看历史
+  recordCheckinLog(item.id, todayStr(), item.count);
   // 【修改点】实时刷新：打卡变化同步更新日历圆点
   saveData(); renderTodos(); renderCheckins(); renderMoodCalendar(); renderJourney();
 }
@@ -778,6 +905,8 @@ function checkinMinus(id) {
   const old = item.count;
   item.count--; item.countDate = todayStr();
   checkStreakOnCount(item, old, item.count);
+  // 【11.24 新增】同步写入当天打卡日志
+  recordCheckinLog(item.id, todayStr(), item.count);
   // 【修改点】实时刷新
   saveData(); renderTodos(); renderCheckins(); renderMoodCalendar(); renderJourney();
 }
@@ -808,7 +937,8 @@ function openHabitForm() {
   if (name) name.value = '';
   if (target) target.value = '';
   if (planDays) planDays.value = '';
-  if (category) category.value = '健康';
+  // 【11.24 改】默认分类改为「当前习惯分类列表的第一项」，避免「健康」被删后选到空值
+  if (category) { const cats = habitCats(); category.value = cats.includes('健康') ? '健康' : cats[0]; }
   document.querySelectorAll('#habitIconPicker .habit-icon-option').forEach(el => el.classList.remove('active'));
   mask.style.display = 'flex';
   setTimeout(() => { if (name) name.focus(); }, 60);
@@ -831,7 +961,10 @@ function submitHabitForm() {
   const iconEl = document.querySelector('#habitIconPicker .habit-icon-option.active');
   const emoji = iconEl ? iconEl.dataset.e : '⭐';
 
-  const category = document.getElementById('hfCategory').value || '其他';
+  // 【11.24 改】分类以当前习惯分类列表为准，选到无效值时回落到第一项
+  const hCats = habitCats();
+  const chosenCat = document.getElementById('hfCategory').value;
+  const category = hCats.includes(chosenCat) ? chosenCat : (hCats[0] || '生活');
 
   const planRaw = parseInt(document.getElementById('hfPlanDays').value, 10);
   const planDays = (!isNaN(planRaw) && planRaw >= 1) ? planRaw : 0;
@@ -937,6 +1070,7 @@ function saveMoodNote() {
 function openMoodDetail(ds) {
   const modal = document.getElementById('moodDetailModal');
   if (!modal) return;
+  mdCurrentDate = ds;   // 【11.24 新增】记住弹窗对应日期，供「跳转至当日」使用
   const isToday = ds === todayStr();
   document.getElementById('mdTitle').textContent = '心情详情 · ' + (isToday ? '今天' : formatDateCN(ds));
 
@@ -975,34 +1109,271 @@ function closeMoodDetail() {
 }
 
 /* ============================================
+   【11.24 新增】模块一：心情详情弹窗 → 跳转至当日
+   点一下按钮，待办 / 习惯 / 心情日历 / 快捷便签 四处同步切到弹窗对应的那一天
+   ============================================ */
+let mdCurrentDate = '';   // 当前弹窗对应的日期，由 openMoodDetail 写入
+
+function jumpToDate(ds) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ds || '')) return;
+  closeMoodDetail();
+  const isToday = ds === todayStr();
+
+  // 1) 待办：先清掉搜索词（否则搜索视图会盖住日期），再把筛选年月日与截止日期都切到目标日
+  data.todoSearch = '';
+  const se = document.getElementById('todoSearch'); if (se) se.value = '';
+  const [y, m, d] = ds.split('-');
+  const yEl = document.getElementById('filterYear');
+  const mEl = document.getElementById('filterMonth');
+  const dEl = document.getElementById('filterDay');
+  if (yEl) yEl.value = y;
+  if (mEl) mEl.value = m;
+  if (dEl) dEl.value = d;
+  const todoDateEl = document.getElementById('todoDate'); if (todoDateEl) todoDateEl.value = ds;
+  renderTodos();
+
+  // 2) 习惯与打卡：切到目标日（非今天自动降级为只读）
+  data.checkinViewDate = isToday ? '' : ds;
+  renderCheckins();
+
+  // 3) 心情日历：翻到该月并高亮选中
+  selectedMoodDate = ds;
+  const dt = parseDate(ds);
+  calYear = dt.getFullYear(); calMonth = dt.getMonth();
+  renderMoodCalendar();
+
+  // 4) 快捷便签：切到当天那一格内容
+  data.noteDate = isToday ? '' : ds;
+  renderNote();
+
+  saveData();
+  const card = document.getElementById('card-todo');
+  if (card && card.scrollIntoView) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  showToast('已切换到 ' + (isToday ? '今天' : formatDateCN(ds)));
+}
+
+/* ============================================
+   【11.24 新增】模块三：分类体系（待办事务导向 / 习惯养成导向）
+   两套分类互相独立，共用同一个管理弹窗，上限 CAT_MAX 个
+   ============================================ */
+let cmTarget = 'todo';   // 管理弹窗当前操作对象：'todo' | 'habit'
+
+// 待办分类下拉：按当前分类列表重建 option，保留用户已选中的值
+function renderTodoCatOptions() {
+  const sel = document.getElementById('todoTypeSelect');
+  if (!sel) return;
+  const prev = sel.value;
+  const cats = todoCats();
+  const sig = cats.join('|');
+  if (sel.dataset.cats !== sig) {
+    sel.innerHTML = cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+    sel.dataset.cats = sig;
+  }
+  sel.value = cats.includes(prev) ? prev : (cats.includes('其他') ? '其他' : cats[0]);
+}
+// 新建习惯弹窗的分类下拉：同上，跟随习惯分类列表
+function renderHabitCatOptions() {
+  const sel = document.getElementById('hfCategory');
+  if (!sel) return;
+  const prev = sel.value;
+  const cats = habitCats();
+  const sig = cats.join('|');
+  if (sel.dataset.cats !== sig) {
+    sel.innerHTML = cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+    sel.dataset.cats = sig;
+  }
+  sel.value = cats.includes(prev) ? prev : cats[0];
+}
+// 习惯卡顶部的分类筛选栏（「全部」+ 各分类 + 管理按钮）
+function renderCheckinCatFilter() {
+  const bar = document.getElementById('checkinCatFilter');
+  if (!bar) return;
+  const cats = habitCats();
+  const cur = (data.checkinFilterCat === ALL_CAT || cats.includes(data.checkinFilterCat))
+    ? data.checkinFilterCat : ALL_CAT;
+  data.checkinFilterCat = cur;
+  const btn = bar.querySelector('.cat-manage-btn');   // 先取到引用，重建后再挂回去
+  bar.innerHTML = [ALL_CAT].concat(cats).map(c =>
+    `<span class="cat-chip${c === cur ? ' active' : ''}" data-cat="${escapeHtml(c)}">${escapeHtml(c)}</span>`
+  ).join('');
+  if (btn) bar.appendChild(btn);
+}
+// 习惯卡顶部「正在查看某日」提示：仅非今天时出现
+function renderCheckinDateTip() {
+  const tip = document.getElementById('checkinDateTip');
+  const label = document.getElementById('checkinDateLabel');
+  const ds = viewCheckinDate();
+  const isToday = ds === todayStr();
+  if (tip) tip.style.display = isToday ? 'none' : 'block';
+  if (label) label.textContent = isToday ? '今天' : formatDateCN(ds);
+}
+
+function catList(kind) { return kind === 'habit' ? habitCats() : todoCats(); }
+function catSave(kind, list) { if (kind === 'habit') data.habitCats = list; else data.todoCats = list; }
+
+function openCatManage(kind) {
+  cmTarget = kind === 'habit' ? 'habit' : 'todo';
+  const mask = document.getElementById('catManageMask');
+  const title = document.getElementById('cmTitle');
+  const input = document.getElementById('cmInput');
+  if (title) title.textContent = cmTarget === 'habit' ? '管理习惯分类' : '管理待办分类';
+  if (input) input.value = '';
+  renderCatManageList();
+  if (mask) mask.style.display = 'flex';
+}
+function closeCatManage() {
+  const mask = document.getElementById('catManageMask');
+  if (mask) mask.style.display = 'none';
+}
+function renderCatManageList() {
+  const box = document.getElementById('cmList');
+  if (!box) return;
+  const list = catList(cmTarget);
+  // 「其他」是删除分类时的迁移兜底（待办默认就有，习惯在删分类时按需补出），
+  // 一旦被改名/删除，迁移目标就不存在了，所以只要列表里有「其他」就锁住它的改和删
+  const protect = list.includes('其他') ? '其他' : '';
+  box.innerHTML = list.map((c, i) => `
+    <div class="cm-row">
+      <span class="cm-name">${escapeHtml(c)}${c === protect ? '<span class="cm-lock">兜底</span>' : ''}</span>
+      <span class="cm-ops">
+        <button class="btn btn-ghost btn-sm" data-cm-rename="${i}"${c === protect ? ' disabled' : ''}>重命名</button>
+        <button class="btn btn-ghost btn-sm" data-cm-del="${i}"${c === protect ? ' disabled' : ''}>删除</button>
+      </span>
+    </div>`).join('');
+  const tip = document.getElementById('cmTip');
+  if (tip) tip.textContent = `当前 ${list.length} / ${CAT_MAX} 个分类（含默认）；删除分类后，其下条目会自动迁移到「其他」。`;
+}
+// 分类改动后统一刷新：两个下拉 + 待办列表 + 习惯筛选与列表
+function refreshCatUI() {
+  renderTodoCatOptions();
+  renderHabitCatOptions();
+  renderCheckinCatFilter();
+  renderTodos();
+  renderCheckins();
+  updateCardOverviews();
+}
+function addCategory(rawName) {
+  const n = (rawName || '').trim();
+  const list = catList(cmTarget);
+  if (!n) { showToast('请输入分类名称'); return; }
+  if (n.length > 6) { showToast('分类名称最多 6 个字'); return; }
+  if (list.includes(n)) { showToast('该分类已存在'); return; }
+  if (list.length >= CAT_MAX) { showToast(`分类已达上限 ${CAT_MAX} 个`); return; }
+  catSave(cmTarget, list.concat(n));
+  saveData(); renderCatManageList(); refreshCatUI();
+  const input = document.getElementById('cmInput'); if (input) input.value = '';
+  showToast('已新增分类「' + n + '」');
+}
+function renameCategory(i) {
+  const list = catList(cmTarget);
+  const oldName = list[i];
+  if (oldName === undefined) return;
+  if (oldName === '其他') { showToast('「其他」是兜底分类，不能重命名'); return; }
+  const input = prompt(`把「${oldName}」改成：`, oldName);
+  if (input === null) return;
+  const n = input.trim();
+  if (!n) { showToast('名称不能为空'); return; }
+  if (n.length > 6) { showToast('分类名称最多 6 个字'); return; }
+  if (n === oldName) return;
+  if (list.includes(n)) { showToast('该分类已存在'); return; }
+  const next = list.slice(); next[i] = n;
+  catSave(cmTarget, next);
+  // 同步改写该分类下所有条目的归属，避免出现「分类改名、条目还挂在旧名」的孤儿数据
+  if (cmTarget === 'todo') data.todos.forEach(t => { if (t.type === oldName) t.type = n; });
+  else {
+    data.checkins.forEach(c => { if (c.category === oldName) c.category = n; });
+    if (data.checkinFilterCat === oldName) data.checkinFilterCat = n;
+  }
+  saveData(); renderCatManageList(); refreshCatUI();
+  showToast('已重命名为「' + n + '」');
+}
+function deleteCategory(i) {
+  const list = catList(cmTarget);
+  const name = list[i];
+  if (name === undefined) return;
+  if (cmTarget === 'todo' && name === '其他') { showToast('「其他」是兜底分类，不能删除'); return; }
+  if (!confirm(`确定删除分类「${name}」吗？\n该分类下的条目会迁移到「其他」。`)) return;
+  const next = list.slice(); next.splice(i, 1);
+  // 习惯默认 6 类里没有「其他」，删除时按需补一个作为迁移目标（补完仍在 8 个上限内）
+  const target = '其他';
+  if (!next.includes(target)) {
+    if (next.length >= CAT_MAX) { showToast('分类已达上限，无法创建兜底分类「其他」'); return; }
+    next.push(target);
+  }
+  catSave(cmTarget, next);
+  if (cmTarget === 'todo') data.todos.forEach(t => { if (t.type === name) t.type = target; });
+  else {
+    data.checkins.forEach(c => { if (c.category === name) c.category = target; });
+    if (data.checkinFilterCat === name) data.checkinFilterCat = ALL_CAT;
+  }
+  saveData(); renderCatManageList(); refreshCatUI();
+  showToast(`已删除「${name}」，相关条目已迁移到「${target}」`);
+}
+
+/* ============================================
    每日一句
    ============================================ */
+// 【11.24 新增】当前展示的句子：有自定义句子就优先展示它，否则取内置语录
+function currentQuoteText() {
+  const custom = (data.quote.customText || '').trim();
+  return custom || (QUOTES[data.quote.currentIdx] || '');
+}
 function renderQuote() {
-  document.getElementById('quoteText').textContent = QUOTES[data.quote.currentIdx];
+  const textEl = document.getElementById('quoteText');
+  if (textEl) textEl.textContent = currentQuoteText();
+
+  // 输入框回填：用户正在输入（聚焦）时不要抢光标
+  const input = document.getElementById('quoteCustomInput');
+  if (input && document.activeElement !== input && input.value !== (data.quote.customText || '')) {
+    input.value = data.quote.customText || '';
+  }
+
+  // 【11.24 新增】我的收藏分类筛选栏
+  const bar = document.getElementById('favFilterBar');
+  if (bar) {
+    const cur = data.quote.favFilter || ALL_CAT;
+    bar.innerHTML = [ALL_CAT].concat(QUOTE_CATS).map(c =>
+      `<span class="cat-chip${c === cur ? ' active' : ''}" data-favcat="${escapeHtml(c)}">${escapeHtml(c)}</span>`
+    ).join('');
+  }
+
   const list = document.getElementById('favoritesList');
   const items = document.getElementById('favoritesItems');
-  if (data.quote.favorites.length === 0) { list.style.display = 'none'; }
-  else {
-    list.style.display = 'block';
-    items.innerHTML = data.quote.favorites.map((f, i) => `
-      <div class="favorite-item">
-        <span class="favorite-text">"${escapeHtml(f.text)}"</span>
-        <span style="text-align:right">
-          <div class="favorite-date">${escapeHtml(f.date)}</div>
-          <button class="favorite-del" data-fav-del="${i}">✕</button>
-        </span>
-      </div>`).join('');
+  if (!list || !items) return;
+  const favs = data.quote.favorites || [];
+  if (favs.length === 0) { list.style.display = 'none'; return; }
+  list.style.display = 'block';
+  const filter = data.quote.favFilter || ALL_CAT;
+  const shown = filter === ALL_CAT ? favs : favs.filter(f => (f.cat || '通用') === filter);
+  if (shown.length === 0) {
+    items.innerHTML = `<div style="padding:10px 0;font-size:12px;color:var(--text-secondary);">「${escapeHtml(filter)}」分类下还没有句子</div>`;
+    return;
   }
+  // 删除按钮带的是原数组下标，筛选状态下也不会删错条目
+  items.innerHTML = shown.map(f => {
+    const idx = favs.indexOf(f);
+    return `<div class="favorite-item">
+      <span class="favorite-text">"${escapeHtml(f.text)}"${f.src ? `<span class="favorite-src">—— ${escapeHtml(f.src)}</span>` : ''}</span>
+      <span style="text-align:right;flex-shrink:0;">
+        <span class="fav-cat-tag">${escapeHtml(f.cat || '通用')}</span>
+        <div class="favorite-date">${escapeHtml(f.date)}</div>
+        <button class="favorite-del" data-fav-del="${idx}">✕</button>
+      </span>
+    </div>`;
+  }).join('');
 }
 function nextQuote() {
+  // 【11.24 改】换一句时先退出自定义句子，回到内置语录轮换（原有轮换逻辑不变）
+  data.quote.customText = '';
   data.quote.currentIdx = (data.quote.currentIdx + 1) % QUOTES.length;
   saveData(); renderQuote();
 }
+// 【11.24 改】收藏前先弹分类选择；已收藏过仍按原逻辑提示
 function favoriteCurrentQuote() {
-  const text = QUOTES[data.quote.currentIdx];
+  const text = currentQuoteText();
+  if (!text.trim()) { showToast('先写点什么，或者点「换一句」'); return; }
   if (data.quote.favorites.some(f => f.text === text)) { showToast('已经收藏过了'); return; }
-  data.quote.favorites.unshift({ text, date: todayStr() });
-  saveData(); renderQuote(); showToast('已收藏');
+  openQuoteFav(text);
 }
 function deleteFavorite(idx) {
   data.quote.favorites.splice(idx, 1);
@@ -1010,11 +1381,122 @@ function deleteFavorite(idx) {
 }
 
 /* ============================================
-   便签
+   【11.24 新增】收藏分类选择弹窗 / 句子库搜索弹窗
    ============================================ */
-function renderNote() { document.getElementById('noteArea').value = data.note; }
+let qfPending = '';        // 待收藏的句子原文
+let qfCat = '通用';        // 弹窗里选中的分类
+
+function openQuoteFav(text) {
+  const mask = document.getElementById('quoteFavMask');
+  if (!mask) return;
+  qfPending = text;
+  qfCat = '通用';
+  const pv = document.getElementById('qfPreview'); if (pv) pv.textContent = '"' + text + '"';
+  const src = document.getElementById('qfSource'); if (src) src.value = '';
+  renderQfCats();
+  mask.style.display = 'flex';
+}
+function closeQuoteFav() {
+  const mask = document.getElementById('quoteFavMask');
+  if (mask) mask.style.display = 'none';
+}
+function renderQfCats() {
+  const box = document.getElementById('qfCats');
+  if (!box) return;
+  box.innerHTML = QUOTE_CATS.map(c =>
+    `<span class="cat-chip${c === qfCat ? ' active' : ''}" data-qfcat="${escapeHtml(c)}">${escapeHtml(c)}</span>`
+  ).join('');
+}
+function confirmQuoteFav() {
+  const text = (qfPending || '').trim();
+  if (!text) { closeQuoteFav(); return; }
+  if (data.quote.favorites.some(f => f.text === text)) { showToast('已经收藏过了'); closeQuoteFav(); return; }
+  const srcEl = document.getElementById('qfSource');
+  data.quote.favorites.unshift({
+    text, date: todayStr(), cat: qfCat || '通用', src: srcEl ? srcEl.value.trim() : '',
+  });
+  saveData(); closeQuoteFav(); renderQuote();
+  showToast('已收藏到「' + (qfCat || '通用') + '」');
+}
+
+function openQuoteSearch() {
+  const mask = document.getElementById('quoteSearchMask');
+  if (!mask) return;
+  const input = document.getElementById('qsInput'); if (input) input.value = '';
+  renderQuoteSearchResults('');
+  mask.style.display = 'flex';
+  setTimeout(() => { if (input) input.focus(); }, 60);
+}
+function closeQuoteSearch() {
+  const mask = document.getElementById('quoteSearchMask');
+  if (mask) mask.style.display = 'none';
+}
+// 搜索范围 = 本地收藏的句子库，按内容 / 出处 / 分类模糊匹配
+function renderQuoteSearchResults(q) {
+  const box = document.getElementById('qsResults');
+  if (!box) return;
+  const kw = (q || '').trim().toLowerCase();
+  const favs = data.quote.favorites || [];
+  const hits = kw
+    ? favs.filter(f => (f.text || '').toLowerCase().includes(kw)
+        || (f.src || '').toLowerCase().includes(kw)
+        || (f.cat || '通用').toLowerCase().includes(kw))
+    : favs;
+  if (hits.length === 0) {
+    box.innerHTML = `<div style="padding:16px 0;text-align:center;font-size:12px;color:var(--text-secondary);">${kw ? '没搜到匹配的句子' : '句子库还是空的，先收藏几句吧'}</div>`;
+    return;
+  }
+  box.innerHTML = hits.map(f => {
+    const idx = favs.indexOf(f);
+    return `<div class="qs-item" data-qs-pick="${idx}">
+      <div class="qs-text">"${escapeHtml(f.text)}"</div>
+      <div class="qs-meta">
+        <span class="fav-cat-tag">${escapeHtml(f.cat || '通用')}</span>
+        ${f.src ? `<span class="qs-src">${escapeHtml(f.src)}</span>` : ''}
+        <span class="favorite-date">${escapeHtml(f.date)}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+function pickSearchResult(idx) {
+  const f = (data.quote.favorites || [])[idx];
+  if (!f) return;
+  // 设成当前每日一句：写进 customText，不动内置语录的轮换指针
+  data.quote.customText = f.text;
+  saveData(); closeQuoteSearch(); renderQuote();
+  showToast('已设为今日一句');
+}
+
+/* ============================================
+   便签
+   【11.24 改】改为按日期存档：noteDate 为空时跟随今天，
+   日常使用仍是「打开就是今天那张」，切换日期时才看历史那一格
+   ============================================ */
+function noteKey() {
+  return (typeof data.noteDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.noteDate)) ? data.noteDate : todayStr();
+}
+function getNoteText(ds) {
+  if (!data.notes || typeof data.notes !== 'object') data.notes = {};
+  if (typeof data.notes[ds] === 'string') return data.notes[ds];
+  // 兼容旧版只有单一 note 的数据：仅在「今天」这一格回落到 data.note
+  if (ds === todayStr() && typeof data.note === 'string') return data.note;
+  return '';
+}
+function renderNote() {
+  const ds = noteKey();
+  const area = document.getElementById('noteArea');
+  if (area) area.value = getNoteText(ds);
+  const label = document.getElementById('noteDateLabel');
+  if (label) label.textContent = '· ' + (ds === todayStr() ? '今天' : formatDateCN(ds));
+}
 function saveNote() {
-  data.note = document.getElementById('noteArea').value; saveData();
+  const ds = noteKey();
+  const val = document.getElementById('noteArea').value;
+  if (!data.notes || typeof data.notes !== 'object') data.notes = {};
+  data.notes[ds] = val;
+  // 今天这格同步写回旧字段 data.note，导出的备份里依旧能看到当天内容
+  if (ds === todayStr()) data.note = val;
+  saveData();
   document.getElementById('noteSaved').textContent =
     '✓ 已自动保存 ' + new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
 }
@@ -1135,6 +1617,8 @@ function journeyCheckAdd(id, date) {
     const oldCount = item.count - 1;
     checkStreakOnCount(item, oldCount, item.count);
   }
+  // 【11.24 新增】时间机器里的编辑也记进打卡日志，与主面板历史回看保持一致
+  recordCheckinLog(item.id, date, item.count);
   saveData();
   // 【修改点】实时刷新：同步日历圆点
   renderTodos(); renderCheckins(); renderMoodCalendar(); renderJourney();
@@ -1151,6 +1635,8 @@ function journeyCheckMinus(id, date) {
     const oldCount = item.count + 1;
     checkStreakOnCount(item, oldCount, item.count);
   }
+  // 【11.24 新增】时间机器里的编辑也记进打卡日志
+  recordCheckinLog(item.id, date, item.count);
   saveData();
   // 【修改点】实时刷新
   renderTodos(); renderCheckins(); renderMoodCalendar(); renderJourney();
@@ -1481,12 +1967,67 @@ function bindEvents() {
   // 【修改点】心情详情弹窗绑定（元素来自升级版 index.html，缺失时跳过）
   safeBind('mdClose', 'click', closeMoodDetail);
   safeBind('moodDetailModal', 'click', e => { if (e.target === e.currentTarget) closeMoodDetail(); });
+  // 【11.24 新增】弹窗底部「跳转至当日」
+  safeBind('mdJumpBtn', 'click', () => jumpToDate(mdCurrentDate));
 
   // 每日一句
   document.getElementById('newQuoteBtn').addEventListener('click', nextQuote);
   document.getElementById('favoriteQuoteBtn').addEventListener('click', favoriteCurrentQuote);
   document.getElementById('favoritesItems').addEventListener('click', e => {
     const del = e.target.closest('[data-fav-del]'); if (del) deleteFavorite(Number(del.dataset.favDel));
+  });
+
+  // 【11.24 新增】每日一句操作栏：自定义输入实时同步展示区
+  const quoteInput = document.getElementById('quoteCustomInput');
+  if (quoteInput) {
+    quoteInput.addEventListener('input', () => {
+      data.quote.customText = quoteInput.value;
+      const t = document.getElementById('quoteText');
+      if (t) t.textContent = quoteInput.value.trim() || (QUOTES[data.quote.currentIdx] || '');
+    });
+    // 失焦时落盘并回填输入框（避免每个按键都写 localStorage）
+    quoteInput.addEventListener('change', () => { saveData(); renderQuote(); });
+  }
+  // 搜索句子库
+  safeBind('quoteSearchBtn', 'click', openQuoteSearch);
+  safeBind('qsClose', 'click', closeQuoteSearch);
+  safeBind('quoteSearchMask', 'click', e => { if (e.target === e.currentTarget) closeQuoteSearch(); });
+  safeBind('qsInput', 'input', e => renderQuoteSearchResults(e.target.value));
+  safeBind('qsResults', 'click', e => {
+    const item = e.target.closest('[data-qs-pick]'); if (!item) return;
+    pickSearchResult(Number(item.dataset.qsPick));
+  });
+  // 收藏分类选择
+  safeBind('qfClose', 'click', closeQuoteFav);
+  safeBind('qfCancel', 'click', closeQuoteFav);
+  safeBind('quoteFavMask', 'click', e => { if (e.target === e.currentTarget) closeQuoteFav(); });
+  safeBind('qfCats', 'click', e => {
+    const chip = e.target.closest('[data-qfcat]'); if (!chip) return;
+    qfCat = chip.dataset.qfcat; renderQfCats();
+  });
+  safeBind('qfConfirm', 'click', confirmQuoteFav);
+  // 我的收藏分类筛选
+  safeBind('favFilterBar', 'click', e => {
+    const chip = e.target.closest('[data-favcat]'); if (!chip) return;
+    data.quote.favFilter = chip.dataset.favcat; saveData(); renderQuote();
+  });
+  // 习惯分类筛选
+  safeBind('checkinCatFilter', 'click', e => {
+    const chip = e.target.closest('[data-cat]'); if (!chip) return;
+    data.checkinFilterCat = chip.dataset.cat; saveData();
+    renderCheckins(); updateCardOverviews();
+  });
+  // 分类管理弹窗（待办 / 习惯共用）
+  safeBind('checkinBackTodayBtn', 'click', () => jumpToDate(todayStr()));
+  safeBind('todoCatManageBtn', 'click', () => openCatManage('todo'));
+  safeBind('habitCatManageBtn', 'click', () => openCatManage('habit'));
+  safeBind('cmClose', 'click', closeCatManage);
+  safeBind('catManageMask', 'click', e => { if (e.target === e.currentTarget) closeCatManage(); });
+  safeBind('cmAdd', 'click', () => addCategory(document.getElementById('cmInput').value));
+  safeBind('cmInput', 'keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addCategory(e.target.value); } });
+  safeBind('cmList', 'click', e => {
+    const rn = e.target.closest('[data-cm-rename]'); if (rn) { renameCategory(Number(rn.dataset.cmRename)); return; }
+    const dl = e.target.closest('[data-cm-del]'); if (dl && !dl.disabled) { deleteCategory(Number(dl.dataset.cmDel)); return; }
   });
 
   // 便签
@@ -1608,6 +2149,9 @@ function bindEvents() {
 // ---------- 启动 ----------
 document.addEventListener('DOMContentLoaded', () => {
   loadData();
+  // 【11.24】习惯区的「历史日期视图」只在本次跳转内临时生效：刷新/重开页面一律回到今天，
+  // 否则一进来就是一堆只读的旧习惯，容易让人以为打卡坏了
+  data.checkinViewDate = '';
   selectedMoodDate = todayStr();
   journeyDate = todayStr();
   initCollapsibleCards();  // 先动态包裹所有卡片，再绑定事件和渲染内容
@@ -1744,6 +2288,37 @@ document.addEventListener('DOMContentLoaded', () => {
     if (t.closest('#closeAiChat')) { e.stopPropagation(); closeAiChat(); return; }
     // ⚙️ 改为 prompt 采集 Key：拦在捕获阶段，index.html 里那个设置浮层不再弹出
     if (t.closest('#aiSettingsBtn')) { e.stopPropagation(); promptAiApiKey(); return; }
+
+    // ========== 【11.23 新增】点击空白自动收起面板 ==========
+    // 以上 5 条核心绑定全部原样保留；以下代码只在“未命中任何一条分支”、即点了空白处时才执行
+    const target = e.target;
+    if (!target || !target.closest) return;
+
+    // 1. AI 聊天面板：展开状态下，点击面板外区域自动收起
+    const aiPanel = document.getElementById('aiChatPanel');
+    if (aiPanel && aiPanel.style.display === 'flex') {
+      if (!target.closest('#aiChatPanel') && !target.closest('#aiChatBtn') && !target.closest('#aiSettingsBtn')) {
+        if (typeof closeAiChat === 'function') closeAiChat();
+      }
+    }
+
+    // 2. 右侧游戏菜单：展开状态下，点击面板外区域自动收起
+    const rightPanel = document.getElementById('rightPanel');
+    const rpOpenBtn = document.getElementById('rpOpenBtn');
+    if (rightPanel && rightPanel.style.display !== 'none') {
+      if (!target.closest('#rightPanel') && !target.closest('#rpOpenBtn')) {
+        rightPanel.style.display = 'none';
+        if (rpOpenBtn) rpOpenBtn.style.display = 'flex';
+      }
+    }
+
+    // 3. 设置面板：点击遮罩层自动关闭
+    const settingsOverlay = document.getElementById('settingsOverlay');
+    if (settingsOverlay && settingsOverlay.classList.contains('open')) {
+      if (target === settingsOverlay && typeof closeSettings === 'function') {
+        closeSettings();
+      }
+    }
   }, true);
 
   // 输入框回车逻辑：电脑端发送，手机端不发送
