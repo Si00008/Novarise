@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>英雄联盟 · 冉星</title>
+<!-- 唯一外部依赖：ECharts 官方 CDN（jsdelivr），无本地构建 -->
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<link rel="stylesheet" href="../../core/style.css">
+</head>
+<body>
+
+<div class="lol-wrap">
+
+  <header class="lol-head">
+    <a class="my-back" href="../../index.html">← 返回冉星</a>
+    <h1>英雄联盟</h1>
+    <nav class="lol-tabs" role="tablist">
+      <button type="button" class="lol-tab is-on" data-tab="my" role="tab" aria-selected="true">我的数据</button>
+      <button type="button" class="lol-tab" data-tab="pro" role="tab" aria-selected="false">职业选手</button>
+    </nav>
+    <span class="my-region" id="myRegion">未设置</span>
+  </header>
+
+  <div class="pro-search lol-search">
+    <input id="proSearchInput" type="search" autocomplete="off" spellcheck="false"
+           placeholder="搜选手名 / 战队 / 位置，回车自动跳到「职业选手」">
+    <button type="button" class="btn" id="proSearchBtn">搜索</button>
+    <button type="button" class="btn btn-ghost" id="proClearBtn">清空</button>
+  </div>
+
+  <!-- ==================== 页签一：我的数据 ==================== -->
+  <section class="lol-pane" id="pane-my" role="tabpanel">
+
+    <!-- 账号概览 -->
+    <section class="my-card my-profile">
+      <div class="my-avatar" id="myAvatar">L</div>
+      <div class="my-id">
+        <div class="my-name" id="myName">未设置召唤师</div>
+        <div class="my-sub" id="mySub">—</div>
+      </div>
+      <div class="my-ranks">
+        <div class="my-rank">
+          <span class="my-rank-label">LOL</span>
+          <span class="my-rank-value" id="myLolRank">待核实</span>
+        </div>
+        <div class="my-rank">
+          <span class="my-rank-label">LOLM</span>
+          <span class="my-rank-value" id="myLolmRank">待核实</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 总览四格 -->
+    <section class="my-stats" id="myStats"></section>
+
+    <div class="my-grid">
+
+      <!-- 八维雷达：未接入真实数据前 value 留空 -->
+      <section class="my-card">
+        <h2 class="my-card-title">能力雷达<span class="my-note">八维 · 待接入</span></h2>
+        <div class="my-radar" id="myRadar"></div>
+        <p class="my-tip">数据源未接入，仅渲染坐标框架；接入后填 series.data 的 value 即可。</p>
+      </section>
+
+      <!-- 模式分布 -->
+      <section class="my-card">
+        <h2 class="my-card-title">模式分布<span class="my-note" id="myModeTotal"></span></h2>
+        <div class="my-modes" id="myModes"></div>
+      </section>
+
+    </div>
+
+    <!-- 全部战绩 -->
+    <section class="my-card">
+      <h2 class="my-card-title">全部战绩<span class="my-note" id="myMatchCount"></span></h2>
+      <div class="my-matches" id="myMatches"></div>
+    </section>
+
+    <div class="my-foot">
+      本页读取本机存档（localStorage · novarise_lol_profile），不联网取数；英雄名等无法确证的字段不显示。
+    </div>
+
+  </section>
+
+  <!-- ==================== 页签二：职业选手 ==================== -->
+  <section class="lol-pane" id="pane-pro" role="tabpanel" hidden>
+
+    <p class="pro-tip">
+      需按名字、战队或位置搜索才会出结果；战队与位置来自官方战队页 / 战队官宣，查不到的字段显示「待核实」。
+      收藏后会写进你本机的 LOL 存档，和「我的数据」共用一份 localStorage。
+    </p>
+
+    <div id="proResults" class="pro-results"></div>
+    <div id="proEmpty" class="pro-empty" hidden>没有匹配的选手，换个关键词试试</div>
+
+    <section class="pro-fav-sec">
+      <h2>我的收藏 <span id="favCount">0</span></h2>
+      <div id="proFavList" class="pro-results"></div>
+      <div id="favEmpty" class="pro-empty">还没有收藏，搜索结果里点「收藏」即可</div>
+    </section>
+
+    <div class="pro-foot">
+      本页为纯静态查询，不联网取数。选手基础档案核实时间：2026-11（官方战队页 / 战队官宣 / 权威电竞资料站）。
+    </div>
+
+  </section>
+
+</div>
+
+<script src="lol-page.js"></script>
+</body>
+</html>

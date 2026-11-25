@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>冉星 Novarise</title>
 <meta name="description" content="冉星 Novarise - 每天打开一次的生活仪表盘">
-<link rel="stylesheet" href="style.css">
-<link rel="stylesheet" href="lol-panel.css">
+<link rel="stylesheet" href="core/style.css">
 </head>
 <body>
 <div class="container">
@@ -648,8 +647,10 @@
     <button id="aiChatSend" type="button" class="btn" style="padding:9px 14px;white-space:nowrap;">发送</button>
   </div>
 </div>
-<script src="game.js"></script>
-<script src="ai.js"></script>
-<script src="app.js"></script>
+<script src="core/shared.js"></script>
+<script src="modules/game/game.js"></script>
+<script src="core/panel.js"></script>
+<script src="modules/ai/ai.js"></script>
+<script src="modules/life/app.js"></script>
 </body>
 </html>
