@@ -237,7 +237,13 @@
       </div>
       <div class="todo-input-row">
         <input type="text" id="todoInput" placeholder="添加新待办..." maxlength="50" enterkeyhint="done">
-        <input type="date" id="todoDate" title="选定日期：下方只显示该日的待办；留空显示全部">
+        <!-- 【2026.11.27 改】原生日期框只做数据源，视觉换成中文标签 + 弹层日历（core/datepicker.js） -->
+        <div class="date-picker">
+          <input type="date" id="todoDate" class="date-picker-native" title="选定日期：下方只显示该日的待办；留空显示全部">
+          <button type="button" class="date-picker-display" id="todoDateDisplay" aria-haspopup="dialog">
+            <span id="todoDateText">选择日期</span><span class="date-picker-icon">▾</span>
+          </button>
+        </div>
         <button class="btn btn-ghost btn-sm" id="clearTodoDateBtn" type="button" title="清除该选定日期的所有待办">✕</button>
         <select class="todo-type-select" id="todoTypeSelect">
           <option value="工作">工作</option>
@@ -325,7 +331,13 @@
         <!-- 日期选择器 -->
         <div class="journey-date-row">
           <label style="font-size:13px;color:var(--text-secondary)">选择日期：</label>
-          <input type="date" id="journeyDate">
+          <!-- 【2026.11.27 改】与待办同一套自定义日期控件，原生框只做数据源（core/datepicker.js） -->
+          <div class="date-picker">
+            <input type="date" id="journeyDate" class="date-picker-native" title="切换坚持历程查看的日期">
+            <button type="button" class="date-picker-display" id="journeyDateDisplay" aria-haspopup="dialog">
+              <span id="journeyDateText">选择日期</span><span class="date-picker-icon">▾</span>
+            </button>
+          </div>
         </div>
         <!-- 当日汇总标签 -->
         <div class="journey-summary" id="journeySummary"></div>
@@ -466,6 +478,31 @@
     <div class="setting-row"><span class="setting-label">✨ 每日一句</span><div class="toggle on" data-module="quote"></div></div>
     <div class="setting-row"><span class="setting-label">📝 便签</span><div class="toggle on" data-module="note"></div></div>
     <div class="setting-row"><span class="setting-label">🌟 坚持历程</span><div class="toggle on" data-module="journey"></div></div>
+
+    <!-- 数据快照：每天首次打开自动存一份，可回滚 -->
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">数据快照</div>
+        <div class="setting-desc" id="snapDesc">每天首次打开自动存一份，保留最近 7 天</div>
+      </div>
+      <div class="setting-control" style="display:flex;gap:6px;align-items:center;">
+        <select class="input" id="snapSelect" style="max-width:110px;"></select>
+        <button class="btn btn-ghost btn-sm" id="snapRestoreBtn">恢复</button>
+      </div>
+    </div>
+
+    <!-- 【2026.11.27 新增】最近错误：全局兜底记下的最近 5 条，出问题时先看这里（core/errors.js） -->
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">最近错误</div>
+        <div class="setting-desc" id="errDesc">没有记录</div>
+      </div>
+      <div class="setting-control" style="display:flex;gap:6px;align-items:center;">
+        <button class="btn btn-ghost btn-sm" id="errShowBtn" type="button">查看</button>
+        <button class="btn btn-ghost btn-sm" id="errClearBtn" type="button">清空</button>
+      </div>
+    </div>
+    <div class="err-list" id="errList" style="display:none;"></div>
 
     <div class="settings-actions">
       <button class="btn btn-ghost" id="clearCheckinsBtn">清空所有打卡项</button>
@@ -648,9 +685,11 @@
     <button id="aiChatSend" type="button" class="btn" style="padding:9px 14px;white-space:nowrap;">发送</button>
   </div>
 </div>
+<script src="core/errors.js"></script>
 <script src="core/shared.js"></script>
 <script src="modules/game/game.js"></script>
 <script src="core/panel.js"></script>
+<script src="core/datepicker.js"></script>
 <script src="modules/ai/ai.js"></script>
 <script src="modules/life/app.js"></script>
 </body>

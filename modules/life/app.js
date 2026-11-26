@@ -504,8 +504,105 @@ function loadData() {
   data = defaultData();
 }
 function saveData() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
-  catch(e) { console.warn('保存失败', e); }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); return true; }
+  catch(e) {
+    console.warn('保存失败', e);
+    if (typeof showToast === 'function') showToast('保存失败：存储空间已满，请先导出备份');
+    return false;
+  }
+}
+
+/* ============================================
+   【新增】每日数据快照：防误删、防写坏
+   —— 每天首次打开时，把当时的完整 data 存一份到 localStorage；
+      滚动保留最近 SNAP_KEEP 天；设置面板里可挑选某天恢复。
+      独立键名 Novarise_snap_YYYY-MM-DD，不参与主数据、不加进 data 结构。
+   ============================================ */
+const SNAP_PREFIX = 'Novarise_snap_';
+const SNAP_KEEP = 7;
+
+function snapKeyOf(day) { return SNAP_PREFIX + day; }
+
+function listSnapshots() {
+  const out = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || k.indexOf(SNAP_PREFIX) !== 0) continue;
+      const day = k.slice(SNAP_PREFIX.length);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;   // 跳过恢复用的临时键
+      let obj = null;
+      try { obj = JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { obj = null; }
+      out.push({ day: day, ts: (obj && obj.ts) || 0, ok: !!(obj && obj.data) });
+    }
+  } catch (e) { /* 隐私模式下读不到就当作没有 */ }
+  out.sort(function (a, b) { return a.day < b.day ? 1 : -1; });
+  return out;
+}
+
+function pruneSnapshots() {
+  const list = listSnapshots();
+  for (let i = SNAP_KEEP; i < list.length; i++) {
+    try { localStorage.removeItem(snapKeyOf(list[i].day)); } catch (e) {}
+  }
+}
+
+// force=true 时覆盖当天已有的快照（恢复数据前用它保底）
+function writeSnapshot(force) {
+  const day = todayStr();
+  const key = snapKeyOf(day);
+  try {
+    if (!force && localStorage.getItem(key)) return true;   // 今天已经存过，不重复写
+    const payload = JSON.stringify({ ts: Date.now(), version: DATA_VERSION, data: data });
+    try {
+      localStorage.setItem(key, payload);
+    } catch (full) {
+      // 空间不够：先淘汰最旧一份再试一次
+      const list = listSnapshots();
+      if (list.length) { try { localStorage.removeItem(snapKeyOf(list[list.length - 1].day)); } catch (e) {} }
+      localStorage.setItem(key, payload);
+    }
+    pruneSnapshots();
+    return true;
+  } catch (e2) {
+    if (typeof showToast === 'function') showToast('存储已满，今日快照未保存，请先导出备份');
+    return false;
+  }
+}
+
+function restoreSnapshot(day) {
+  let obj = null;
+  try { obj = JSON.parse(localStorage.getItem(snapKeyOf(day)) || 'null'); } catch (e) { obj = null; }
+  if (!obj || !obj.data) { showToast('这份快照已失效'); return; }
+  if (!confirm('用 ' + day + ' 的快照覆盖当前数据？当前数据会先存进今天的快照。')) return;
+  writeSnapshot(true);                       // 先把现状保一份，别把退路也盖掉
+  data = migrateData(obj.data);
+  saveData();
+  refreshAll();
+  showToast('已恢复到 ' + day + ' 的快照');
+}
+
+function renderSnapOptions() {
+  const sel = document.getElementById('snapSelect');
+  const desc = document.getElementById('snapDesc');
+  if (!sel) return;
+  const list = listSnapshots();
+  sel.innerHTML = '';
+  if (!list.length) {
+    const o = document.createElement('option');
+    o.value = '';
+    o.textContent = '暂无快照';
+    sel.appendChild(o);
+    if (desc) desc.textContent = '每天首次打开自动存一份，保留最近 7 天';
+    return;
+  }
+  list.forEach(function (s, i) {
+    const o = document.createElement('option');
+    o.value = s.day;
+    o.textContent = (i === 0 ? '最新 ' : '') + s.day.slice(5).replace('-', '.');
+    sel.appendChild(o);
+  });
+  if (desc) desc.textContent = '已存 ' + list.length + ' 份，今天已自动保存';
 }
 
 // 跨天清零 count
@@ -2274,6 +2371,15 @@ function bindEvents() {
   });
   document.getElementById('clearCheckinsBtn').addEventListener('click', clearAllCheckins);
   document.getElementById('exportBtn').addEventListener('click', exportData);
+  // 【新增】快照恢复
+  const snapBtn = document.getElementById('snapRestoreBtn');
+  if (snapBtn) snapBtn.addEventListener('click', function () {
+    const sel = document.getElementById('snapSelect');
+    const day = sel ? sel.value : '';
+    if (!day) { showToast('暂无可恢复的快照'); return; }
+    restoreSnapshot(day);
+    renderSnapOptions();
+  });
   document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importFile').click());
   document.getElementById('importFile').addEventListener('change', importData);
   document.getElementById('resetBtn').addEventListener('click', resetData);
@@ -2328,6 +2434,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initCollapsibleCards();  // 先动态包裹所有卡片，再绑定事件和渲染内容
   bindEvents();
   refreshAll();
+  writeSnapshot();         // 【新增】每天首次打开存一份快照，防误删
 });
 
 /* ============================================
@@ -2343,6 +2450,7 @@ function openSettings() {
   const overlay = document.getElementById('settingsOverlay');
   if (!overlay) return;
   overlay.classList.add('open');            // CSS: .settings-overlay.open { display:flex }
+  renderSnapOptions();                      // 【新增】填充快照下拉
   const nickname = document.getElementById('nicknameInput');
   if (nickname) nickname.value = data.nickname || '';
   renderAvatar(document.getElementById('avatarPreviewSm'));   // 头像预览

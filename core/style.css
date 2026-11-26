@@ -464,7 +464,8 @@ body {
 .journey-date-row {
   display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap;
 }
-.journey-date-row input[type="date"] {
+/* 只作用于裸露的原生日期框；换成自定义控件后（.date-picker-native）不再套这层边框 */
+.journey-date-row input[type="date"]:not(.date-picker-native) {
   border: 1px solid var(--border); border-radius: 10px; padding: 10px;
   font-size: 13px; background: var(--bg); color: var(--text); outline: none; color-scheme: light;
 }
@@ -2046,3 +2047,88 @@ body {
   .pro-fav-btn { width: 100%; }
   .lol-head .my-region { margin-left: 0; }
 }
+
+/* ========== 【2026.11.27 新增】自定义日期选择器 ==========
+   原生 date 框里的 yyyy/mm/dd 是浏览器按语言环境渲染的占位模板，CSS 改不了内容。
+   做法：原生框视觉隐藏、只留作数据源；界面改用中文标签 + 弹层日历。 */
+.date-picker { position: relative; display: inline-flex; flex: 0 0 auto; }
+.date-picker-native {
+  position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+  opacity: 0; pointer-events: none; border: 0; padding: 0; margin: 0;
+}
+.date-picker-display {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 11px 12px; font-size: 13px; line-height: 1;
+  background: var(--bg); color: var(--text-secondary);
+  font-family: inherit; cursor: pointer; white-space: nowrap;
+  transition: border-color .2s, color .2s;
+}
+.date-picker-display.has-value { color: var(--text); font-weight: 600; }
+.date-picker-display:active { border-color: var(--primary); }
+.date-picker-icon { font-size: 10px; color: var(--text-secondary); }
+
+.dp-pop {
+  position: fixed; z-index: 5000; display: none;
+  /* 宽度随视口走：小屏占屏比大、大屏封顶，不写死像素；max-width 是硬兜底 */
+  width: clamp(258px, 88vw, 300px); max-width: calc(100vw - 16px); padding: 12px 12px 10px;
+  background: var(--card-bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: var(--shadow-hover); box-sizing: border-box;
+}
+.dp-pop.show { display: block; }
+.dp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.dp-nav {
+  width: 32px; height: 32px; border: 0; background: transparent; color: var(--text-secondary);
+  font-size: 18px; line-height: 1; border-radius: 8px; cursor: pointer; font-family: inherit;
+}
+.dp-nav:active { background: var(--primary-light); color: var(--primary); }
+.dp-title { font-size: 14px; font-weight: 600; letter-spacing: .5px; }
+.dp-week { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 2px; }
+.dp-week span { text-align: center; font-size: 11px; color: var(--text-secondary); padding: 3px 0; }
+.dp-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.dp-cell {
+  height: 34px; border: 0; background: transparent; color: var(--text);
+  font-size: 13px; border-radius: 8px; cursor: pointer; font-family: inherit;
+  transition: background .15s;
+}
+.dp-cell:active { background: var(--primary-light); }
+.dp-cell-weekend { color: var(--text-secondary); }
+.dp-cell-out { color: var(--text-secondary); opacity: .4; }
+.dp-cell-today { box-shadow: inset 0 0 0 1px var(--primary); }
+.dp-cell-sel { background: var(--primary); color: #fff; font-weight: 600; opacity: 1; }
+.dp-foot { display: flex; gap: 8px; margin-top: 10px; }
+.dp-quick {
+  flex: 1; border: 1px solid var(--border); background: transparent; color: var(--text);
+  border-radius: 9px; padding: 7px 0; font-size: 12px; cursor: pointer; font-family: inherit;
+}
+.dp-quick:active { border-color: var(--primary); color: var(--primary); }
+
+/* ============================================================
+   【2026.11.27 新增】全局错误兜底（对应 core/errors.js）
+   .err-bar  顶部黄条：出错即时提示，可手动关掉
+   .err-list 设置面板里的历史记录：最近 5 条
+   ============================================================ */
+.err-bar {
+  position: fixed; left: 0; right: 0; top: 0; z-index: 6000;
+  display: none; align-items: center; gap: 10px;
+  padding: 9px 14px; font-size: 12px; line-height: 1.5;
+  background: #FFF4CC; color: #6B4E00; border-bottom: 1px solid #E5D089;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .06);
+}
+.err-bar.show { display: flex; }
+.err-bar-text { flex: 1 1 auto; min-width: 0; word-break: break-all; }
+.err-bar-close {
+  flex: 0 0 auto; border: 0; background: transparent; color: inherit;
+  font-size: 15px; line-height: 1; padding: 4px 6px; cursor: pointer; font-family: inherit;
+}
+[data-theme="dark"] .err-bar { background: #3D300F; color: #F1DC96; border-bottom-color: #5A4720; }
+
+.err-list { padding: 2px 0 10px; }
+.err-item {
+  font-size: 11px; line-height: 1.6; color: var(--text-secondary);
+  border-left: 2px solid var(--primary-light);
+  padding: 5px 0 5px 8px; margin-bottom: 6px; word-break: break-all;
+}
+.err-item b { color: var(--text); font-weight: 600; }
+.err-dim { opacity: .7; }
