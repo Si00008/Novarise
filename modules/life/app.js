@@ -562,37 +562,38 @@ function applyTheme() {
 /* ============================================
    待办
    ============================================ */
+// 【本轮新增】多选批量状态：active=是否处于批量管理态，selected=已勾选的待办 id（统一按字符串比较）
+const todoBatch = { active: false, selected: new Set() };
+
+// 【本轮改】全页只保留一个日期框 #todoDate：它既是新待办的日期，也是下方列表的筛选日期
+// 空值 = 全部待办；有值 = 仅该日；有关键词时仍走全量文本匹配（关键词优先）
+function todoFilterValue() {
+  const el = document.getElementById('todoDate');
+  return el && el.value ? el.value : '';
+}
 function getVisibleTodos() {
   const q = (data.todoSearch || '').trim().toLowerCase();
   if (q) return data.todos.filter(t => t.text.toLowerCase().includes(q));
-
-  const y = document.getElementById('filterYear').value.trim();
-  const m = document.getElementById('filterMonth').value.trim();
-  const d = document.getElementById('filterDay').value.trim();
-
-  // 1) 如果什么都没填，默认显示今天及未来
-  if (!y && !m && !d) {
-    return data.todos.filter(t => t.date >= todayStr());
-  }
-
-  // 2) 模糊匹配逻辑
-  return data.todos.filter(t => {
-    const parts = t.date.split('-'); // [YYYY, MM, DD]
-    if (y && parts[0] !== y) return false;
-    if (m && parts[1] !== m.padStart(2, '0')) return false;
-    if (d && parts[2] !== d.padStart(2, '0')) return false;
-    return true;
-  });
+  const date = todoFilterValue();
+  if (!date) return data.todos.slice();
+  return data.todos.filter(t => t.date === date);
 }
 function renderTodos() {
   const c = document.getElementById('todoContainer');
+  const prevScroll = c ? c.scrollTop : 0;
   const list = getVisibleTodos();
   const searching = !!(data.todoSearch || '').trim();
+  const filterDate = todoFilterValue();
   if (list.length === 0) {
-    c.innerHTML = `<div class="empty-state"><span class="emoji">${searching?'🔍':'🎉'}</span>${searching?'没有找到匹配的待办':'今天还没有待办，享受轻松时光'}</div>`;
+    // 【本轮改】空状态按筛选来源分开：搜索无结果 / 选中的某天为空 / 全部为空
+    let emoji = '🎉', text = '今天还没有待办，享受轻松时光';
+    if (searching) { emoji = '🔍'; text = '没有找到匹配的待办'; }
+    else if (filterDate) { emoji = '📅'; text = '这天没有待办'; }
+    c.innerHTML = `<div class="empty-state"><span class="emoji">${emoji}</span>${text}</div>`;
   } else if (searching) {
     c.innerHTML = list.map(t => `
-      <div class="search-result-item">
+      <div class="search-result-item" data-item-id="${t.id}">
+        <div class="todo-select-box ${todoBatch.selected.has(String(t.id))?'checked':''}" data-select-id="${t.id}"></div>
         <div class="todo-checkbox ${t.done?'checked':''}" data-todo-id="${t.id}"></div>
         <span class="todo-text ${t.done?'done':''}">${escapeHtml(t.text)}</span>
         <span class="todo-date-tag">${t.date.slice(5)} · ${escapeHtml(t.type)}</span>
@@ -603,13 +604,19 @@ function renderTodos() {
   } else {
     c.innerHTML = renderByType(list);
   }
-  const all = data.todos.filter(t => t.date >= todayStr());
-  const total = all.length, done = all.filter(t => t.done).length;
+  // 【本轮改】统计改为跟随筛选结果，不再另按"今天及未来"算一套
+  const total = list.length, done = list.filter(t => t.done).length;
   const pct = total === 0 ? 0 : Math.round(done/total*100);
   document.getElementById('todoProgress').style.width = pct + '%';
   document.getElementById('todoProgressText').textContent = `${done} / ${total}（${pct}%）`;
   // 【11.24 新增】分类下拉跟随当前分类列表重建，分类增删改后无需手动刷新
   renderTodoCatOptions();
+  // 【本轮新增】批量分类下拉同步 + 列表高度约束 + 多选计数同步
+  renderBatchCatOptions();
+  measureTodoListHeight();
+  refreshBatchUI();
+  // 重渲染后把滚动位置还原，拖拽/勾选不跳顶部
+  if (c) c.scrollTop = prevScroll;
 }
 function renderByDate(todos) {
   const byDate = {};
@@ -662,9 +669,13 @@ function renderByType(todos) {
   }).join('');
 }
 function todoItemHtml(t) {
-  return `<div class="todo-item">
+  const sel = todoBatch.selected.has(String(t.id));
+  // 【本轮改】加多选格与拖动手柄：多选格只在 select-mode 显示，手柄位置在删除按钮之前
+  return `<div class="todo-item" data-item-id="${t.id}">
+    <div class="todo-select-box ${sel?'checked':''}" data-select-id="${t.id}"></div>
     <div class="todo-checkbox ${t.done?'checked':''}" data-todo-id="${t.id}"></div>
     <span class="todo-text ${t.done?'done':''}">${escapeHtml(t.text)}</span>
+    <span class="todo-drag-handle" data-drag-handle="${t.id}" title="按住拖动调整组内顺序">⋮⋮</span>
     <button class="todo-del" data-todo-del="${t.id}">✕</button>
   </div>`;
 }
@@ -676,8 +687,7 @@ function addTodo() {
   const date = (dateInput && dateInput.value) ? dateInput.value : todayStr();
   data.todos.push({ id:'t'+Date.now(), text, done:false, date, type:document.getElementById('todoTypeSelect').value });
   input.value = ''; input.blur();
-  // 【新增】提交成功后把日期框重置回今日，避免下一条待办误带上次选的日期
-  if (dateInput) dateInput.value = todayStr();
+  // 【本轮改】日期框兼作列表筛选，新增后不再重置为今天，新条目直接落在当前选中的日期里
   // 【修改点】实时刷新：新增待办后同步刷新打卡卡片与日历圆点
   saveData(); renderTodos(); renderCheckins(); renderMoodCalendar(); renderJourney();
   showToast('已添加');
@@ -687,17 +697,24 @@ const debouncedAddFromBlur = debounce(() => {
   if (input.value.trim()) addTodo();
 }, 400);
 function handleTodoClick(e) {
+  // 【本轮新增】多选态优先：点任意条目 / 多选格即切换勾选，
+  // 完成状态切换、单条删除、拖动均在多选态下屏蔽
+  if (todoBatch.active) {
+    const row = e.target.closest('[data-item-id]');
+    if (row) { toggleBatchSelect(row.dataset.itemId); return; }
+    return;
+  }
   const ck = e.target.closest('[data-todo-id]');
   if (ck) {
     const t = data.todos.find(x => String(x.id) === String(ck.dataset.todoId));
-    if (t) { t.done = !t.done; saveData(); renderTodos(); renderCheckins(); renderMoodCalendar(); renderJourney(); }
+    if (t) { t.done = !t.done; saveData(); renderTodos(); renderCheckins(); renderMoodCalendar(); renderJourney(); updateCardOverviews(); }
     return;
   }
   const del = e.target.closest('[data-todo-del]');
   if (del) {
     data.todos = data.todos.filter(x => String(x.id) !== String(del.dataset.todoDel));
     // 【修改点】实时刷新：待办删除后同步日历圆点
-    saveData(); renderTodos(); renderCheckins(); renderMoodCalendar(); renderJourney();
+    saveData(); renderTodos(); renderCheckins(); renderMoodCalendar(); renderJourney(); updateCardOverviews();
   }
 }
 function handleGroupToggle(e) {
@@ -714,6 +731,237 @@ function clearDone() {
   // 【修改点】实时刷新
   saveData(); renderTodos(); renderCheckins(); renderMoodCalendar(); renderJourney();
   showToast('已清空今日已完成');
+}
+// 【本轮新增】清除按钮：只删“当前选定日期”的全部待办，其他日期不受影响；删前必须二次确认
+function clearDateTodos() {
+  const ds = todoFilterValue();
+  if (!ds) { showToast('请先选定要清除的日期'); return; }
+  const hit = data.todos.filter(t => t.date === ds);
+  if (!hit.length) { showToast('这天没有待办'); return; }
+  // 今天只写 MM.DD；其余日期带年份，避免去年/明年同月同日混淆
+  const isToday = ds === todayStr();
+  const label = isToday ? ds.slice(5).replace('-', '.') : ds.replace(/-/g, '.');
+  if (!confirm(`是否确认清除 ${label} 的所有待办？`)) return;
+  data.todos = data.todos.filter(t => t.date !== ds);
+  saveData();
+  renderTodos(); renderCheckins(); renderMoodCalendar(); renderJourney(); updateCardOverviews();
+  showToast(`已清除 ${label} 的待办`);
+}
+
+/* ============================================
+   【本轮新增】多选批量 · 组内手动排序 · 列表高度约束
+   ============================================ */
+function enterBatchMode() {
+  todoBatch.active = true;
+  todoBatch.selected.clear();
+  const card = document.getElementById('card-todo');
+  if (card) card.classList.add('select-mode');
+  refreshBatchUI();
+  renderTodos();
+}
+function exitBatchMode() {
+  todoBatch.active = false;
+  todoBatch.selected.clear();
+  const card = document.getElementById('card-todo');
+  if (card) card.classList.remove('select-mode');
+  refreshBatchUI();
+  renderTodos();
+}
+function toggleBatchSelect(id) {
+  const k = String(id);
+  if (todoBatch.selected.has(k)) todoBatch.selected.delete(k);
+  else todoBatch.selected.add(k);
+  const on = todoBatch.selected.has(k);
+  // 只切换对应勾选格，不整表重渲染，避免列表跳动
+  document.querySelectorAll(`[data-select-id="${k}"]`).forEach(el => el.classList.toggle('checked', on));
+  refreshBatchUI();
+}
+function refreshBatchUI() {
+  const n = todoBatch.selected.size;
+  const cnt = document.getElementById('todoBatchCount');
+  if (cnt) cnt.textContent = `已选 ${n} 项`;
+  const all = document.getElementById('todoBatchSelectAll');
+  if (all) {
+    let total = 0;
+    try { total = getVisibleTodos().length; } catch(e) { total = 0; }
+    all.textContent = (total > 0 && n >= total) ? '取消全选' : '全选';
+  }
+}
+function renderBatchCatOptions() {
+  const sel = document.getElementById('todoBatchCat');
+  if (!sel) return;
+  const cats = todoCats();
+  const sig = cats.join('|');
+  if (sel.dataset.cats === sig) return;   // 分类没变就不重建，避免每次刷新丢掉当前选中
+  sel.dataset.cats = sig;
+  sel.innerHTML = '<option value="">改分类…</option>' +
+    cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+}
+function batchDeleteTodos() {
+  const ids = Array.from(todoBatch.selected);
+  if (!ids.length) { showToast('先选几条待办'); return; }
+  if (!confirm(`确定删除选中的 ${ids.length} 条待办吗？不可恢复。`)) return;
+  data.todos = data.todos.filter(t => !ids.includes(String(t.id)));
+  todoBatch.selected.clear();
+  saveData(); renderTodos(); renderCheckins(); renderMoodCalendar(); renderJourney(); updateCardOverviews();
+  showToast(`已删除 ${ids.length} 条`);
+}
+function batchSetTodoCat(cat) {
+  const ids = Array.from(todoBatch.selected);
+  if (!ids.length) { showToast('先选几条待办'); return; }
+  data.todos.forEach(t => { if (ids.includes(String(t.id))) t.type = cat; });
+  saveData(); renderTodos(); renderCheckins(); renderMoodCalendar(); renderJourney(); updateCardOverviews();
+  showToast(`已改为「${cat}」`);
+}
+function bindTodoBatchEvents() {
+  const btn = document.getElementById('todoSelectModeBtn');
+  if (btn) btn.addEventListener('click', () => { todoBatch.active ? exitBatchMode() : enterBatchMode(); });
+  const exitBtn = document.getElementById('todoBatchExit');
+  if (exitBtn) exitBtn.addEventListener('click', exitBatchMode);
+  const allBtn = document.getElementById('todoBatchSelectAll');
+  if (allBtn) allBtn.addEventListener('click', () => {
+    const list = getVisibleTodos();
+    if (todoBatch.selected.size >= list.length) todoBatch.selected.clear();
+    else list.forEach(t => todoBatch.selected.add(String(t.id)));
+    renderTodos();
+  });
+  const delBtn = document.getElementById('todoBatchDelete');
+  if (delBtn) delBtn.addEventListener('click', batchDeleteTodos);
+  const catSel = document.getElementById('todoBatchCat');
+  if (catSel) catSel.addEventListener('change', () => {
+    if (!catSel.value) return;
+    const v = catSel.value;
+    catSel.value = '';
+    batchSetTodoCat(v);
+  });
+  // 多选态点卡片空白区退出（输入行、下拉、便签、统计文字都不算空白区）
+  const card = document.getElementById('card-todo');
+  if (card) card.addEventListener('click', e => {
+    if (!todoBatch.active) return;
+    if (e.target.closest('[data-item-id]') || e.target.closest('#todoBatchBar') || e.target.closest('#todoSelectModeBtn')) return;
+    if (e.target.closest('#todoInput') || e.target.closest('#todoDate') || e.target.closest('#addTodoBtn') || e.target.closest('#todoTypeSelect')) return;
+    if (e.target.closest('#noteArea') || e.target.closest('.note-saved')) return;
+    exitBatchMode();
+  });
+  // 移动端：长按条目本体 400ms 进入多选（期间移动超过 10px 视为滑动，取消）
+  const tc = document.getElementById('todoContainer');
+  if (tc) {
+    let tTimer = null, ty = 0;
+    tc.addEventListener('touchstart', e => {
+      if (todoBatch.active) return;
+      const row = e.target.closest('.todo-item');
+      if (!row) return;
+      if (e.target.closest('[data-drag-handle]')) return;   // 手柄路径交给拖拽
+      ty = e.touches[0].clientY;
+      tTimer = setTimeout(() => {
+        tTimer = null;
+        todoBatch.active = true;
+        todoBatch.selected.clear();
+        todoBatch.selected.add(String(row.dataset.itemId));
+        const cardEl = document.getElementById('card-todo');
+        if (cardEl) cardEl.classList.add('select-mode');
+        refreshBatchUI();
+        renderTodos();
+        if (navigator.vibrate) navigator.vibrate(12);
+      }, 400);
+    }, { passive: true });
+    tc.addEventListener('touchmove', e => {
+      if (!tTimer) return;
+      if (Math.abs(e.touches[0].clientY - ty) > 10) { clearTimeout(tTimer); tTimer = null; }
+    }, { passive: true });
+    tc.addEventListener('touchend', () => { if (tTimer) { clearTimeout(tTimer); tTimer = null; } });
+    tc.addEventListener('touchcancel', () => { if (tTimer) { clearTimeout(tTimer); tTimer = null; } });
+  }
+}
+// 列表最大高度 = 刚好 3 条：单条实测高度 × 3 + 1px 边框余量
+function measureTodoListHeight() {
+  const c = document.getElementById('todoContainer');
+  if (!c) return;
+  const items = c.querySelectorAll('.todo-item');
+  if (!items.length) { c.style.maxHeight = ''; return; }
+  const h = items[0].offsetHeight;
+  if (!h) { c.style.maxHeight = ''; return; }
+  // 目标是一屏完整露出 3 条条目。容器内还含分组标题、子分组间距，
+  // 只按“行高 × 3”算会把第 3 条吃掉一截（实测 221px 只能见 2 条半），
+  // 因此直接量第 3 条的底边到容器顶的实距。
+  let mh = 0;
+  const third = items[2];
+  if (third) {
+    const cr = c.getBoundingClientRect();
+    const tr = third.getBoundingClientRect();
+    if (tr.height > 0) mh = Math.round(tr.bottom - cr.top + c.scrollTop) + 1;
+  }
+  if (!mh) {
+    const head = c.querySelector('.todo-group-header');
+    mh = h * 3 + (head ? head.offsetHeight : 0) + 1;
+  }
+  c.style.maxHeight = mh + 'px';
+}
+// 组内手动排序：鼠标按住手柄即拖，触摸长按 300ms 后拖；落位改 data.todos 数组顺序
+function bindTodoDragEvents() {
+  const c = document.getElementById('todoContainer');
+  if (!c) return;
+  let drag = null;      // 已进入拖动：{ item, id, sub }
+  let pending = null;   // 触摸长按未激活：{ item, id, ptrId, y, timer }
+  let target = null;    // 目标落点：{ id, before }
+  const clearMarks = () => {
+    c.querySelectorAll('.drop-before,.drop-after').forEach(el => el.classList.remove('drop-before','drop-after'));
+  };
+  const begin = (item, id, ptrId) => {
+    drag = { item, id: String(id), sub: item.closest('.todo-subgroup') };
+    item.classList.add('dragging');
+    try { c.setPointerCapture(ptrId); } catch(_) {}
+  };
+
+  c.addEventListener('pointerdown', e => {
+    const handle = e.target.closest('[data-drag-handle]');
+    if (!handle || todoBatch.active) return;
+    const item = handle.closest('.todo-item');
+    if (!item) return;
+    if (e.pointerType === 'mouse') { e.preventDefault(); begin(item, handle.dataset.dragHandle, e.pointerId); return; }
+    pending = { item, id: handle.dataset.dragHandle, ptrId: e.pointerId, y: e.clientY, timer: null };
+    pending.timer = setTimeout(() => {
+      if (!pending) return;
+      const p = pending; pending = null;
+      begin(p.item, p.id, p.ptrId);
+    }, 300);
+  });
+
+  c.addEventListener('pointermove', e => {
+    if (pending && Math.abs(e.clientY - pending.y) > 10) { clearTimeout(pending.timer); pending = null; }
+    if (!drag) return;
+    clearMarks();
+    target = null;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (!el) return;
+    const over = el.closest('.todo-item');
+    if (!over || over === drag.item) return;
+    if (over.closest('.todo-subgroup') !== drag.sub) return;   // 只允许同一子分组内换位
+    const r = over.getBoundingClientRect();
+    const before = e.clientY < r.top + r.height / 2;
+    target = { id: String(over.dataset.itemId), before };
+    over.classList.add(before ? 'drop-before' : 'drop-after');
+  });
+
+  const finish = () => {
+    if (pending) { clearTimeout(pending.timer); pending = null; }
+    if (!drag) return;
+    const src = drag; drag = null;
+    src.item.classList.remove('dragging');
+    clearMarks();
+    const t = target; target = null;
+    if (!t || t.id === src.id) return;
+    const arr = data.todos;
+    const from = arr.findIndex(x => String(x.id) === src.id);
+    if (from < 0) return;
+    const moved = arr.splice(from, 1)[0];
+    const to = arr.findIndex(x => String(x.id) === t.id);
+    if (to < 0) { arr.splice(from, 0, moved); return; }
+    arr.splice(t.before ? to : to + 1, 0, moved);
+    saveData(); renderTodos(); updateCardOverviews();
+  };
+  c.addEventListener('pointerup', finish);
+  c.addEventListener('pointercancel', finish);
 }
 
 /* ============================================
@@ -1073,18 +1321,13 @@ function jumpToDate(ds) {
   closeMoodDetail();
   const isToday = ds === todayStr();
 
-  // 1) 待办：先清掉搜索词（否则搜索视图会盖住日期），再把筛选年月日与截止日期都切到目标日
+  // 1) 待办：先清掉搜索词（否则搜索视图会盖住日期），再把筛选日期与截止日期都切到目标日
   data.todoSearch = '';
   const se = document.getElementById('todoSearch'); if (se) se.value = '';
-  const [y, m, d] = ds.split('-');
-  const yEl = document.getElementById('filterYear');
-  const mEl = document.getElementById('filterMonth');
-  const dEl = document.getElementById('filterDay');
-  if (yEl) yEl.value = y;
-  if (mEl) mEl.value = m;
-  if (dEl) dEl.value = d;
+  // 【本轮改】日期框只剩一个 #todoDate，跳日直接写入它
   const todoDateEl = document.getElementById('todoDate'); if (todoDateEl) todoDateEl.value = ds;
   renderTodos();
+  updateCardOverviews();
 
   // 2) 习惯与打卡：切到目标日（非今天自动降级为只读）
   data.checkinViewDate = isToday ? '' : ds;
@@ -1642,7 +1885,8 @@ function applyModuleVisibility() {
 // 【修改点】根据卡片类型计算概览文本
 function getCardOverviewData(card) {
   if (card.id === 'card-todo') {
-    const all = data.todos.filter(t => t.date >= todayStr());
+    // 【本轮改】概览数字跟随当前筛选，与进度条同一数据源
+    const all = getVisibleTodos();
     return `${all.filter(t => t.done).length}/${all.length}`;
   }
   if (card.id === 'card-checkin') {
@@ -1787,22 +2031,10 @@ function refreshAll() {
   document.querySelectorAll('#todoViewTabs .view-tab').forEach(el => el.classList.toggle('active', el.dataset.view === data.todoViewMode));
   document.querySelectorAll('#checkinViewTabs .view-tab').forEach(el => el.classList.toggle('active', el.dataset.mode === data.checkinViewMode));
   document.getElementById('todoSearch').value = data.todoSearch || '';
-  // 强制给日期输入框赋值为今天，避免出现 yyyy/mm/日 的“伪乱码”
-  // 默认填入今天的年月日
-  const today = todayStr().split('-');
-  const yEl = document.getElementById('filterYear');
-  const mEl = document.getElementById('filterMonth');
-  const dEl = document.getElementById('filterDay');
-  if (yEl && !yEl.value && !mEl.value && !dEl.value) {
-    yEl.value = today[0];
-    mEl.value = today[1];
-    dEl.value = today[2];
-  }
-  // 【修改点】待办截止日期框初始值设为今天。
-  // 不给初值的话页面一打开该框是空的，addTodo() 虽然会兜底回退到今天，
-  // 但用户看不到实际日期，也不知道这条待办会落在哪一天。
+  // 【本轮改】#todoDate 是全页唯一日期框，兼作列表筛选：初始必须留空，
+  // 留空 = 显示全部待办；一旦自动填今天，页面一打开就只筛当天，也回不到全部
   const todoDateEl = document.getElementById('todoDate');
-  if (todoDateEl) todoDateEl.value = todayStr();
+  if (todoDateEl) todoDateEl.value = '';
   if (!journeyDate) journeyDate = todayStr();
   document.getElementById('journeyDate').value = journeyDate;
 }
@@ -1832,34 +2064,19 @@ function bindEvents() {
   tc.addEventListener('click', handleGroupToggle);
   document.getElementById('clearDoneBtn').addEventListener('click', clearDone);
 
-    // --- 自定义模糊日期联动逻辑 ---
-  const yInput = document.getElementById('filterYear');
-  const mInput = document.getElementById('filterMonth');
-  const dInput = document.getElementById('filterDay');
-  const hiddenPicker = document.getElementById('hiddenDatePicker');
+  // --- 【本轮改】全页唯一日期框 #todoDate：既是新增日期，也是列表筛选 ---
+  // 选完日期（日历弹层的确定）或点卡片外空白处都会触发一次刷新
+  const dateEl = document.getElementById('todoDate');
+  if (dateEl) {
+    dateEl.addEventListener('change', () => { renderTodos(); updateCardOverviews(); });
+    dateEl.addEventListener('blur', () => { renderTodos(); updateCardOverviews(); });
+  }
+  const clearDateBtn = document.getElementById('clearTodoDateBtn');
+  if (clearDateBtn) clearDateBtn.addEventListener('click', clearDateTodos);
 
-  // 用户手动输入时触发过滤
-  [yInput, mInput, dInput].forEach(el => {
-    el.addEventListener('input', () => { renderTodos(); });
-  });
-
-  // 点击日历图标，唤起原生选择器
-  document.getElementById('openCalendarBtn').addEventListener('click', () => {
-    if (hiddenPicker.showPicker) hiddenPicker.showPicker(); // 现代浏览器API
-    else hiddenPicker.click(); // 兼容旧版
-  });
-
-  // 从日历选择后，拆解填入三个输入框
-  hiddenPicker.addEventListener('change', (e) => {
-    const val = e.target.value; // 格式为 YYYY-MM-DD
-    if (val) {
-      const [y, m, d] = val.split('-');
-      yInput.value = y;
-      mInput.value = m;
-      dInput.value = d;
-      renderTodos();
-    }
-  });
+  // --- 【本轮新增】多选批量 与 组内手动排序 ---
+  bindTodoBatchEvents();
+  bindTodoDragEvents();
 
   // 【删除】原"习惯"卡片的 addHabitBtn / habitInput 绑定已随卡片合并移除
 

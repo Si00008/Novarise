@@ -225,6 +225,7 @@
             <button class="view-tab active" data-view="date">按日期</button>
             <button class="view-tab" data-view="type">按类型</button>
           </div>
+          <button class="btn btn-ghost btn-sm" id="todoSelectModeBtn" type="button">批量管理</button>
           <button class="btn btn-ghost btn-sm" id="clearDoneBtn">清空已完成</button>
         </span>
       </div>
@@ -236,17 +237,8 @@
       </div>
       <div class="todo-input-row">
         <input type="text" id="todoInput" placeholder="添加新待办..." maxlength="50" enterkeyhint="done">
-        <input type="date" id="todoDate" title="选择截止日期（默认今天）">
-        <!-- 自定义的模糊日期输入框 -->
-        <div class="fuzzy-date-box">
-          <input type="text" id="filterYear" maxlength="4" placeholder="____"> 年
-          <input type="text" id="filterMonth" maxlength="2" placeholder="__"> 月
-          <input type="text" id="filterDay" maxlength="2" placeholder="__"> 日
-          <!-- 保留原生日历功能，通过点击图标唤起 -->
-          <span id="openCalendarBtn" style="cursor:pointer; font-size:18px;" title="点击选择日历">📅</span>
-          <input type="date" id="hiddenDatePicker" style="position:absolute; opacity:0; width:0; height:0;">
-        </div>
-        <button class="btn btn-ghost btn-sm" id="clearTodoDateBtn" title="清空日期，显示所有">✕</button>
+        <input type="date" id="todoDate" title="选定日期：下方只显示该日的待办；留空显示全部">
+        <button class="btn btn-ghost btn-sm" id="clearTodoDateBtn" type="button" title="清除该选定日期的所有待办">✕</button>
         <select class="todo-type-select" id="todoTypeSelect">
           <option value="工作">工作</option>
           <option value="生活">生活</option>
@@ -258,6 +250,15 @@
       <div id="todoContainer"></div>
       <div class="todo-progress-bar"><div class="todo-progress-fill" id="todoProgress"></div></div>
       <div class="todo-progress-text" id="todoProgressText">0 / 0</div>
+
+      <!-- 【本轮新增】多选操作栏：仅在 #card-todo 处于 select-mode 时显示 -->
+      <div id="todoBatchBar" class="todo-batch-bar">
+        <span class="todo-batch-count" id="todoBatchCount">已选 0 项</span>
+        <button class="btn btn-ghost btn-sm" id="todoBatchSelectAll" type="button">全选</button>
+        <select class="todo-type-select" id="todoBatchCat" title="批量修改分类"></select>
+        <button class="btn btn-ghost btn-sm" id="todoBatchDelete" type="button">删除</button>
+        <button class="btn btn-sm" id="todoBatchExit" type="button">完成</button>
+      </div>
 
       <!-- 【本轮重构】快捷便签从独立卡片并入待办卡片底部：
            上面一条虚线隔开，配「📝 快捷便签」提示；原来的 card-note 整块已删除 -->

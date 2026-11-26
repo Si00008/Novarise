@@ -227,6 +227,51 @@ body {
 .search-result-item { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); gap: 10px; }
 .search-result-item:last-child { border-bottom: none; }
 
+/* ---------- 【本轮新增】待办筛选日期 · 列表滚动 · 多选 · 拖拽 ---------- */
+/* 全页唯一日期框 #todoDate：既决定新待办落在哪天，也决定下方列表只显示哪天；不占满宽 */
+.todo-input-row #todoDate { flex: 0 0 auto; }
+.todo-input-row #todoDate:focus { border-color: var(--primary); }
+
+/* 列表滚动：最大高度由 JS 实测写入 inline style（3 条待办），此处只管滚动与细滚动条 */
+#todoContainer { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+#todoContainer::-webkit-scrollbar { width: 6px; }
+#todoContainer::-webkit-scrollbar-track { background: transparent; }
+#todoContainer::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+#todoContainer::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+
+/* 多选格：默认隐藏，select-mode 下显示；与完成状态用的 .todo-checkbox 完全分开 */
+.todo-select-box {
+  width: 22px; height: 22px; border: 2px solid var(--border); border-radius: 6px;
+  display: none; align-items: center; justify-content: center; flex-shrink: 0;
+  background: var(--card-bg); cursor: pointer; transition: all 0.2s;
+}
+.todo-select-box.checked { background: var(--primary); border-color: var(--primary); }
+.todo-select-box.checked::after { content: '✓'; color: white; font-size: 13px; font-weight: bold; }
+#card-todo.select-mode .todo-select-box { display: flex; }
+
+/* 拖动手柄：只在条目右侧出现，多选态隐藏，避免两套手势打架 */
+.todo-drag-handle {
+  color: var(--text-secondary); font-size: 14px; letter-spacing: -1px;
+  cursor: grab; padding: 0 4px; flex-shrink: 0; user-select: none;
+  touch-action: none; opacity: 0.55; transition: opacity 0.2s;
+}
+.todo-drag-handle:active { cursor: grabbing; opacity: 1; }
+#card-todo.select-mode .todo-drag-handle { display: none; }
+
+/* 拖拽反馈：源条目半透明，目标位置显示一条主题色虚线 */
+.todo-item.dragging { opacity: 0.45; background: var(--primary-light); border-radius: 8px; }
+.todo-item.drop-before { box-shadow: inset 0 2px 0 var(--primary); }
+.todo-item.drop-after { box-shadow: inset 0 -2px 0 var(--primary); }
+
+/* 批量操作栏：卡片内底部，select-mode 时出现 */
+.todo-batch-bar {
+  display: none; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 10px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--bg);
+}
+#card-todo.select-mode .todo-batch-bar { display: flex; }
+.todo-batch-count { font-size: 12px; color: var(--text-secondary); margin-right: auto; }
+
 /* ========== 打卡 ========== */
 .habit-list { display: flex; flex-direction: column; gap: 10px; }
 .habit-item {
@@ -548,28 +593,8 @@ body {
 }
 .toast.show { transform: translateX(-50%) translateY(0); }
 
-/* 模糊日期输入框样式 */
-.fuzzy-date-box {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-.fuzzy-date-box input[type="text"] {
-  width: 40px;
-  text-align: center;
-  border: none;
-  border-bottom: 1.5px solid var(--text-secondary);
-  background: transparent;
-  color: var(--text);
-  outline: none;
-  font-family: inherit;
-  padding: 2px 0;
-}
-.fuzzy-date-box input[type="text"]:focus {
-  border-bottom-color: var(--primary);
-}
+/* 【本轮改】模糊日期三框（.fuzzy-date-box）已整体拆除，
+   全页只留一个日期框 #todoDate（在新增行内，兼作列表筛选），样式见待办段落 */
 
 /* ========== 新建习惯弹窗 ========== */
 /* 遮罩层：全屏半透明、置顶、flex 居中；默认隐藏，.open 时显示 */
@@ -1073,7 +1098,8 @@ body {
      撑到 478px，触发 iOS 整页缩小。这里允许换行并放开收缩下限。 */
   .todo-input-row { flex-wrap: wrap !important; }
   .todo-input-row > * { min-width: 0 !important; }
-  .fuzzy-date-box { flex-wrap: wrap !important; max-width: 100% !important; }
+  /* 【本轮改】原 .fuzzy-date-box 已拆除；筛选框改为单框，这里只放开它的收缩下限 */
+  .todo-search-row .cs-row { flex-wrap: wrap !important; }
 
   /* 悬浮球略缩小，仍居右下 */
   #aiChatBtn {
